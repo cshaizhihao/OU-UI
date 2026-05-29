@@ -1,18 +1,31 @@
 import { AgentCards, AgentTable } from "../components/AgentViews";
 import { AnalyticsPanel } from "../components/Charts";
-import { agents, nodeRows, taskRows } from "../data";
+import {
+  agents,
+  nodeHealthRows,
+  protocolOptions,
+  runtimeOptions,
+  taskQueue
+} from "../data";
+
+const onlineAgents = agents.filter((agent) => agent.status === "online").length;
+const totalUplink = agents.reduce((sum, agent) => sum + agent.uplinkMbps, 0);
+const totalDownlink = agents.reduce((sum, agent) => sum + agent.downlinkMbps, 0);
+const usedTraffic = agents.reduce((sum, agent) => sum + agent.usedTrafficGb, 0);
+const quotaTraffic = agents.reduce((sum, agent) => sum + agent.quotaTrafficGb, 0);
 
 const kpis = [
-  { label: "今日任务", value: "1,284", delta: "+12.4%" },
-  { label: "活跃 Agent", value: "36", delta: "+4" },
-  { label: "平均延迟", value: "1.8s", delta: "-0.3s" },
-  { label: "节点健康", value: "97.6%", delta: "+1.1%" }
+  { label: "Online agents", value: `${onlineAgents} / ${agents.length}`, delta: "1 degraded" },
+  { label: "Avg CPU", value: "40%", delta: "Peak 76%" },
+  { label: "Avg memory", value: "49%", delta: "Stable" },
+  { label: "Up / Down total", value: `${totalUplink} / ${totalDownlink} Mbps`, delta: "Live sample" },
+  { label: "Traffic used", value: `${usedTraffic} GB`, delta: `Quota ${quotaTraffic} GB` }
 ];
 
 export function DashboardPage() {
   return (
     <div className="dashboard">
-      <section className="kpi-grid" id="概览">
+      <section className="kpi-grid" id="overview">
         {kpis.map((kpi) => (
           <article className="kpi-card" key={kpi.label}>
             <span>{kpi.label}</span>
@@ -22,49 +35,113 @@ export function DashboardPage() {
         ))}
       </section>
 
-      <AnalyticsPanel />
       <AgentCards agents={agents} />
 
       <div className="split-grid">
-        <section className="panel" id="任务">
-          <div className="section-heading compact">
-            <h2>任务页面占位</h2>
-            <button className="ghost-button">查看全部</button>
+        <section className="panel" id="deploy">
+          <div className="section-heading">
+            <div>
+              <p className="eyebrow">Node Dispatch</p>
+              <h2>Node delivery</h2>
+            </div>
+            <button className="primary-button">Enqueue</button>
           </div>
-          <div className="task-list">
-            {taskRows.map((task) => (
-              <article className="task-item" key={task.name}>
-                <div>
-                  <strong>{task.name}</strong>
-                  <span>{task.owner} · {task.state}</span>
-                </div>
-                <div className="progress">
-                  <span style={{ width: `${task.progress}%` }} />
-                </div>
-              </article>
+          <form className="dispatch-form">
+            <label>
+              Agent
+              <select defaultValue={agents[0].id}>
+                {agents.map((agent) => (
+                  <option value={agent.id} key={agent.id}>
+                    {agent.name} - {agent.region}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Runtime
+              <select defaultValue="Xray">
+                {runtimeOptions.map((runtime) => (
+                  <option value={runtime} key={runtime}>
+                    {runtime}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Protocol
+              <select defaultValue="VLESS Reality">
+                {protocolOptions.map((protocol) => (
+                  <option value={protocol} key={protocol}>
+                    {protocol}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Task queue
+              <select defaultValue="rolling">
+                <option value="rolling">Rolling delivery - keep active sessions</option>
+                <option value="immediate">Immediate delivery - reload runtime</option>
+                <option value="staged">Staged delivery - approval required</option>
+              </select>
+            </label>
+          </form>
+          <div className="protocol-strip" aria-label="Available protocols">
+            {protocolOptions.map((protocol) => (
+              <span key={protocol}>{protocol}</span>
             ))}
           </div>
         </section>
 
-        <section className="panel" id="节点">
+        <section className="panel" id="queue">
           <div className="section-heading compact">
-            <h2>节点页面占位</h2>
-            <button className="ghost-button">扩容</button>
+            <h2>Task queue</h2>
+            <button className="ghost-button">Pause queue</button>
           </div>
-          <div className="node-list">
-            {nodeRows.map((node) => (
-              <article className="node-item" key={node.name}>
-                <div>
-                  <strong>{node.name}</strong>
-                  <span>{node.region}</span>
+          <div className="task-list">
+            {taskQueue.map((task) => (
+              <article className="task-item" key={task.id}>
+                <div className="task-item-head">
+                  <div>
+                    <strong>{task.action}</strong>
+                    <span>
+                      {task.agentName} - {task.runtime} - {task.protocol}
+                    </span>
+                  </div>
+                  <small>{task.eta}</small>
                 </div>
-                <meter min="0" max="100" value={node.load} />
-                <small>{node.health}</small>
+                <div className="progress">
+                  <span style={{ width: `${task.progress}%` }} />
+                </div>
+                <div className="task-meta">
+                  <span>{task.id}</span>
+                  <span>{task.state}</span>
+                </div>
               </article>
             ))}
           </div>
         </section>
       </div>
+
+      <AnalyticsPanel />
+
+      <section className="panel" id="nodes">
+        <div className="section-heading compact">
+          <h2>Node health</h2>
+          <button className="ghost-button">Export snapshot</button>
+        </div>
+        <div className="node-list">
+          {nodeHealthRows.map((node) => (
+            <article className="node-item" key={node.name}>
+              <div>
+                <strong>{node.name}</strong>
+                <span>{node.detail}</span>
+              </div>
+              <small>{node.value}</small>
+            </article>
+          ))}
+        </div>
+      </section>
 
       <AgentTable agents={agents} />
     </div>

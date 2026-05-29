@@ -1,29 +1,24 @@
 # OU-UI
 
-OU-UI 是一个面向自托管场景的中文 UI 面板项目。当前版本为 `v0.1.0`，目标是提供清晰、可审计、可重复执行的部署入口，让使用者在不暴露凭据的前提下完成基础安装、端口配置、域名/DNS/SSL 选择和运行环境初始化。
+OU-UI 是一个面向自托管和多机节点运维的分布式代理节点管理面板。当前版本 `v0.3.0` 已完成主控面板骨架、Agent 注册与任务闭环、Xray/Hysteria2 Provider 预览、中文安装脚本、CI 和节点下发控制台。
 
-- 版本：`v0.1.0`
+- 版本：`v0.3.0`
 - 仓库：<https://github.com/cshaizhihao/OU-UI>
 - 默认端口：`3000`
-- 默认安全路径：安装时自动生成，例如 `/ds8a9f`
-- 部署方式：Docker / Docker Compose
+- 默认入口：安装时自动生成随机安全路径，例如 `/ds8a9f`
+- License：`AGPL-3.0`
 
-## Research 摘要
+## 已完成
 
-v0.1.0 的研究重点是把“能跑起来”和“不要误写敏感信息”放在第一位：
-
-1. 安装流程必须中文交互，所有危险选项需要显式确认。
-2. 不在仓库内保存真实 token、API key、证书私钥或生产密码。
-3. 首次安装时自动生成随机管理员账号和密码，并只写入目标主机的运行目录。
-4. 域名、DNS、SSL 采用分支式 SOP：用户输入域名后强制 HTTPS，并通过 acme.sh + DNS API 自动申请证书。
-5. 面板入口必须包含随机安全路径，降低主动探测风险。
-6. 路径必须限制在安全目录，避免把运行数据写到系统根目录、用户家目录或仓库源码目录之外的未知位置。
-
-完整记录见 [docs/Research.md](docs/Research.md)。
+- `v0.1.0`：项目骨架、Go/Gin 后端、React/Vite 前端、Agent 注册/心跳、中文 README/SOP/Research、安装脚本。
+- `v0.1.1`：GitHub Actions CI，覆盖 Go、前端、Docker、Shell 和密钥扫描。
+- `v0.1.2`：安装脚本加固，包含系统检测、Docker Compose 检测、端口占用检测、acme.sh 路径、证书校验和 Agent 安装入口。
+- `v0.2.0`：Agent 任务闭环，支持 `noop`、`runtime.status`、`node.deploy`，任务拉取、执行、结果回传。
+- `v0.2.0`：Xray Provider 预览，支持 `VLESS`、`VMess`、`Trojan`、`Shadowsocks` 和 `VLESS Reality` 配置渲染。
+- `v0.3.0`：Hysteria2 Provider 预览，支持监听端口、TLS、password auth、bandwidth、masquerade 和流量限制字段预留。
+- `v0.3.0`：前端升级为 OU-UI 代理节点控制台，包含 Agent 监控、上下行、累计流量/限额、节点下发和任务队列。
 
 ## 快速开始
-
-> 下面命令不会要求你输入任何 token 或密钥。需要 SSL 自动签发时，请按脚本提示在本机环境中自行配置 DNS 服务商凭据，仓库不会保存这些内容。
 
 ```bash
 git clone https://github.com/cshaizhihao/OU-UI.git
@@ -31,58 +26,74 @@ cd OU-UI
 bash scripts/install.sh
 ```
 
-安装脚本会依次询问：
+安装脚本会检测系统、Docker Compose、端口占用、安装路径和证书文件；输入域名后会强制启用 HTTPS，并可通过 `acme.sh + Cloudflare DNS` 签发证书。
 
-1. 是否同意安装前声明。
-2. 安装目录，默认 `/opt/ou-ui`。
-3. Web 端口，默认 `3000`。
-4. 是否已完成域名 DNS 解析。
-5. 如输入域名，自动调用 acme.sh + Cloudflare DNS 申请证书，并强制 HTTPS。
-6. 如没有域名，则降级使用 `HTTP://IP:端口`。
-7. 自动生成随机安全路径、管理员账号和管理员密码。
-8. 是否生成 Docker Compose 配置并启动服务。
+需要自动签发证书时，只在当前 shell 中导出 DNS API 变量：
 
-安装完成后，脚本会回显完整面板登录链接、安装目录、管理员账号、管理员密码和 Agent 注册令牌。
+```bash
+export CF_Token="your-cloudflare-token"
+export ACME_EMAIL="admin@example.com"
+bash scripts/install.sh
+```
 
-SSL 说明：`v0.1.0` 的安装脚本会准备证书目录；输入域名时会强制 HTTPS，Nginx 容器会读取 `certs/fullchain.pem` 和 `certs/privkey.pem` 启用 TLS。
+不要把真实 token、`.env`、证书私钥或运行日志提交到仓库。
+
+## Agent 安装
+
+运行 `scripts/install.sh` 后，安装目录会生成：
+
+```text
+/opt/ou-ui/docs/agent-install.md
+```
+
+主控面板也提供 Agent 一键安装脚本接口：
+
+```text
+/安全路径/api/v1/agents/install-script
+```
+
+Agent 注册后会定期心跳、采集基础系统指标、拉取任务、渲染节点配置并回传执行结果。
+
+## 协议预览
+
+- Xray：`VLESS`、`VLESS Reality`、`VMess`、`Trojan`、`Shadowsocks`
+- Hysteria2：password auth、TLS cert/key、bandwidth、masquerade
+- Sing-Box：已保留 Runtime 枚举，后续版本补充 Provider
+
+详细说明：
+
+- [Xray Provider](docs/protocols/xray.md)
+- [Hysteria2 Provider](docs/protocols/hysteria2.md)
 
 ## 手动 Docker Compose
-
-也可以复制示例环境文件后手动启动：
 
 ```bash
 cp .env.example .env
 docker compose up -d --build
 ```
 
-请务必修改 `.env` 中的默认值。不要把 `.env`、证书、私钥或任何真实凭据提交到仓库。
+请先修改 `.env` 中的示例值，尤其是管理员密码、JWT Secret、Agent 注册令牌和安全路径。
 
-## 目录结构
+## CI
 
-```text
-.
-├── docs/
-│   ├── Research.md
-│   └── SOP.md
-├── scripts/
-│   └── install.sh
-├── .env.example
-├── docker-compose.yml
-├── Dockerfile
-├── LICENSE
-└── README.md
-```
+GitHub Actions 工作流位于 `.github/workflows/ci.yml`，覆盖：
 
-## SOP
+- Go test/build
+- 前端 typecheck/build
+- Docker web/server target build
+- `bash -n` 与 ShellCheck
+- Gitleaks secret scan
 
-部署、升级、回滚、证书处理和安全检查步骤见 [docs/SOP.md](docs/SOP.md)。
+## 文档
+
+- [Research 摘要](docs/Research.md)
+- [SOP](docs/SOP.md)
 
 ## 安全约定
 
 - 不要在 issue、日志、截图或提交中泄露 token、密码、证书私钥。
 - `.env`、`data/`、`certs/`、运行日志和备份文件默认被 `.gitignore` 忽略。
-- 安装脚本只生成本地随机账号密码，不内置任何真实凭据。
-- 若使用 acme.sh，请优先使用环境变量或交互式会话配置 DNS API 凭据，不要写进仓库文件。
+- Agent 注册令牌只应在受控节点上使用。
 
 ## 许可证
 

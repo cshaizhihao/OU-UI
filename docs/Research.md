@@ -1,62 +1,46 @@
 # Research 摘要
 
-版本：`v0.1.0`
+版本：`v0.3.0`
 
 仓库：<https://github.com/cshaizhihao/OU-UI>
 
 ## 背景
 
-OU-UI v0.1.0 从空仓库启动，第一阶段的核心不是功能堆叠，而是建立可重复、可审计、不会泄露敏感信息的部署基础。文档和脚本需要让新用户能在中文提示下完成安装，同时给后续开发者留下稳定的 DevOps 约定。
+v0.3.0 的目标是在 DevOps 加固基础上补齐 Agent 任务闭环、Xray Provider 预览、Hysteria2 Provider 预览和前端节点下发界面。
 
-## 目标
+## CI 设计结论
 
-1. 提供中文 README，明确项目版本、仓库地址、部署入口和安全边界。
-2. 提供中文 SOP，覆盖安装、升级、回滚、证书、安全检查和故障排查。
-3. 提供交互式 `scripts/install.sh`，收集端口、域名和 DNS 状态；输入域名时强制 HTTPS 并调用 acme.sh。
-4. 安装过程生成随机安全路径、管理员账号密码和 Agent 注册令牌，但不把真实凭据写入仓库。
-5. 用 `.env.example` 展示变量结构，真实 `.env` 由使用者在目标机器生成。
+GitHub Actions 拆成独立 job：
 
-## 安全原则
+- Go：`go test ./...`，并分别构建 server 与 agent。
+- Frontend：使用 pnpm 安装依赖，执行 typecheck 与 build。
+- Shell：对 `scripts/` 与 `deploy/` 下的 shell 脚本执行 `bash -n` 和 ShellCheck。
+- Docker：通过 Buildx 构建 `web` 与 `server` target，不推送镜像。
+- Secret scan：使用 Gitleaks 扫描仓库，避免误提交 token、私钥、密码等敏感内容。
 
-- 仓库只保存示例值，不保存真实 token、密钥、密码或证书私钥。
-- 安装脚本默认写入 `/opt/ou-ui`，并拒绝危险路径，例如 `/`、`/root`、`/home`、`/etc`、`/usr`。
-- 生成的 `.env` 权限设置为 `600`，降低本机误读风险。
-- acme.sh 分支只从当前 shell 读取 DNS API 环境变量，不把这些值保存到仓库或 `.env`。
-- 最终回显会提示用户保存随机账号密码，但不会把它们提交回仓库。
+CI 不依赖真实业务 token，也不会把部署凭据写入仓库。
 
-## 安装流程调研结论
+## 安装脚本加固结论
 
-Docker Compose 适合 v0.1.0：
+`scripts/install.sh` 增强点：
 
-- 单机部署门槛低。
-- 服务、环境变量和挂载路径可读性好。
-- 后续可以平滑扩展到反向代理、数据库、缓存或任务队列。
+1. `trap ERR` 输出失败行号和常见排查方向。
+2. 检测 Linux 发行版、基础命令、Docker daemon 和 Docker Compose v2。
+3. 检查安装目录是否为安全绝对路径，拒绝 `/`、`/opt`、`/root` 等危险目标。
+4. 检查端口范围和监听占用，优先使用 `ss`，回退到 `lsof` 或 `netstat`。
+5. acme.sh 查找真实可执行路径：`PATH`、`$HOME/.acme.sh/acme.sh`，未找到才安装。
+6. HTTPS 分支校验 `fullchain.pem` 与 `privkey.pem` 是否存在、非空，并在有 openssl 时解析证书与私钥。
+7. 安装目录生成 `docs/agent-install.md`，作为节点安装 Agent 的入口。
 
-SSL 建议分两条路径：
+## 安全边界
 
-1. 没有域名：使用 `HTTP://IP:端口/安全路径`，适合首次调试。
-2. 有域名：强制 HTTPS，优先使用 acme.sh 自动签发；DNS API 凭据必须由用户在本机环境自行配置。
-
-## v0.1.0 范围
-
-已纳入：
-
-- README、许可证、编辑器配置、忽略规则。
-- Dockerfile 和 Docker Compose 基础模板。
-- `.env.example`。
-- `docs/Research.md` 和 `docs/SOP.md`。
-- 中文交互式安装脚本。
-
-暂不纳入：
-
-- 完整代理协议下发。
-- 真实 OAuth、云厂商、DNS 服务商 token。
-- 生产级反向代理模板。
-- 多节点部署和高可用编排。
+- 仓库只保存示例值，不保存真实 token、密钥、证书私钥或生产密码。
+- `CF_Token`、`ACME_EMAIL` 仅从当前 shell 环境读取，不写入 `.env`。
+- 生成的 `.env` 默认 `600` 权限。
+- Agent 注册令牌只在安装完成回显和安装目录文档中出现，由目标机器本地保存。
 
 ## 后续建议
 
-1. 在应用代码落地后补充健康检查和迁移命令。
-2. 增加 CI，对 shell 脚本执行 `shellcheck` 和 `bash -n`。
-3. 增加 Docker 镜像版本发布 SOP。
-4. 将 SSL 续期流程抽象为独立脚本，避免安装脚本过长。
+1. 发布二进制产物后，将 Agent 安装入口从本地构建命令升级为 release 下载命令。
+2. 增加镜像推送工作流，并通过环境保护规则控制发布。
+3. 为 `deploy/nginx/entrypoint.sh` 增加更多容器启动测试。

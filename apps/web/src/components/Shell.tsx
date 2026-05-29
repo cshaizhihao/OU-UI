@@ -1,6 +1,13 @@
 import type { ReactNode } from "react";
 
-const navItems = ["概览", "Agents", "任务", "节点", "指标", "设置"];
+const navItems = [
+  { label: "Overview", href: "#overview" },
+  { label: "Agents", href: "#agents" },
+  { label: "Delivery", href: "#deploy" },
+  { label: "Queue", href: "#queue" },
+  { label: "Metrics", href: "#metrics" },
+  { label: "Nodes", href: "#nodes" }
+];
 
 type ShellProps = {
   children: ReactNode;
@@ -9,42 +16,42 @@ type ShellProps = {
 export function Shell({ children }: ShellProps) {
   return (
     <div className="app-shell">
-      <aside className="sidebar" aria-label="主导航">
+      <aside className="sidebar" aria-label="Main navigation">
         <div className="brand">
           <div className="brand-mark">OU</div>
           <div>
             <strong>OU-UI</strong>
-            <span>Agent Ops</span>
+            <span>Proxy node management</span>
           </div>
         </div>
         <nav className="nav-list">
-          {navItems.map((item) => (
-            <a className={item === "概览" ? "nav-item active" : "nav-item"} href={`#${item}`} key={item}>
+          {navItems.map((item, index) => (
+            <a className={index === 0 ? "nav-item active" : "nav-item"} href={item.href} key={item.href}>
               <span className="nav-dot" />
-              {item}
+              {item.label}
             </a>
           ))}
         </nav>
         <div className="sidebar-footer">
-          <span>v0.1.0</span>
-          <strong>控制台骨架</strong>
+          <span>v0.3.0</span>
+          <strong>Control plane online</strong>
         </div>
       </aside>
       <main className="workspace">
         <header className="topbar">
           <div>
-            <p className="eyebrow">生产环境</p>
-            <h1>Agent 控制台</h1>
+            <p className="eyebrow">Production Control Plane</p>
+            <h1>OU-UI Proxy Node Management Console</h1>
           </div>
           <div className="topbar-actions">
             <label className="search">
-              <span>搜索</span>
-              <input placeholder="Agent、任务或节点" />
+              <span>Search</span>
+              <input placeholder="Agent, protocol, node, or task ID" />
             </label>
-            <button className="icon-button" aria-label="通知">
+            <button className="icon-button" aria-label="Notifications">
               !
             </button>
-            <button className="primary-button">新建任务</button>
+            <button className="primary-button">New delivery</button>
           </div>
         </header>
         {children}

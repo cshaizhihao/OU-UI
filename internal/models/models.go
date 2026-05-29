@@ -6,6 +6,47 @@ import (
 	"gorm.io/datatypes"
 )
 
+const (
+	TaskTypeNoop          = "noop"
+	TaskTypeRuntimeStatus = "runtime.status"
+	TaskTypeNodeDeploy    = "node.deploy"
+)
+
+const (
+	TaskStatusQueued    = "queued"
+	TaskStatusRunning   = "running"
+	TaskStatusSucceeded = "succeeded"
+	TaskStatusFailed    = "failed"
+	TaskStatusCanceled  = "canceled"
+)
+
+func IsSupportedTaskType(taskType string) bool {
+	switch taskType {
+	case TaskTypeNoop, TaskTypeRuntimeStatus, TaskTypeNodeDeploy:
+		return true
+	default:
+		return false
+	}
+}
+
+func IsAgentTaskUpdateStatus(status string) bool {
+	switch status {
+	case TaskStatusRunning, TaskStatusSucceeded, TaskStatusFailed:
+		return true
+	default:
+		return false
+	}
+}
+
+func IsTerminalTaskStatus(status string) bool {
+	switch status {
+	case TaskStatusSucceeded, TaskStatusFailed, TaskStatusCanceled:
+		return true
+	default:
+		return false
+	}
+}
+
 type Agent struct {
 	ID            string         `gorm:"primaryKey" json:"id"`
 	Name          string         `json:"name"`
@@ -30,12 +71,29 @@ type Agent struct {
 }
 
 type Task struct {
+	ID         string         `gorm:"primaryKey" json:"id"`
+	AgentID    string         `gorm:"index:idx_tasks_agent_status_created" json:"agentId"`
+	Type       string         `json:"type"`
+	Status     string         `gorm:"index:idx_tasks_agent_status_created" json:"status"`
+	Payload    datatypes.JSON `json:"payload"`
+	Result     datatypes.JSON `json:"result"`
+	Logs       string         `json:"logs"`
+	Attempts   int            `json:"attempts"`
+	StartedAt  *time.Time     `json:"startedAt"`
+	FinishedAt *time.Time     `json:"finishedAt"`
+	CreatedAt  time.Time      `gorm:"index:idx_tasks_agent_status_created" json:"createdAt"`
+	UpdatedAt  time.Time      `json:"updatedAt"`
+}
+
+type Node struct {
 	ID        string         `gorm:"primaryKey" json:"id"`
 	AgentID   string         `json:"agentId"`
-	Type      string         `json:"type"`
+	Name      string         `json:"name"`
+	Runtime   string         `json:"runtime"`
+	Protocol  string         `json:"protocol"`
 	Status    string         `json:"status"`
-	Payload   datatypes.JSON `json:"payload"`
-	Result    datatypes.JSON `json:"result"`
+	Spec      datatypes.JSON `json:"spec"`
+	LastTaskID string         `json:"lastTaskId"`
 	CreatedAt time.Time      `json:"createdAt"`
 	UpdatedAt time.Time      `json:"updatedAt"`
 }

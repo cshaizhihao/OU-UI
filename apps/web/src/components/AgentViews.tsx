@@ -1,10 +1,9 @@
 import type { Agent, AgentStatus } from "../data";
 
 const statusLabel: Record<AgentStatus, string> = {
-  online: "在线",
-  busy: "繁忙",
-  idle: "空闲",
-  offline: "离线"
+  online: "Online",
+  degraded: "Degraded",
+  offline: "Offline"
 };
 
 type AgentViewsProps = {
@@ -13,13 +12,13 @@ type AgentViewsProps = {
 
 export function AgentCards({ agents }: AgentViewsProps) {
   return (
-    <section className="panel" id="Agents">
+    <section className="panel" id="agents">
       <div className="section-heading">
         <div>
-          <p className="eyebrow">Agent Fleet</p>
-          <h2>活跃 Agent</h2>
+          <p className="eyebrow">Agent Monitor</p>
+          <h2>Proxy node monitor</h2>
         </div>
-        <button className="ghost-button">管理编排</button>
+        <button className="ghost-button">Sync probes</button>
       </div>
       <div className="agent-grid">
         {agents.map((agent) => (
@@ -27,14 +26,31 @@ export function AgentCards({ agents }: AgentViewsProps) {
             <div className="agent-card-head">
               <div>
                 <h3>{agent.name}</h3>
-                <span>{agent.role}</span>
+                <span>
+                  {agent.region} - {agent.ip}
+                </span>
               </div>
               <StatusPill status={agent.status} />
             </div>
+
+            <div className="agent-card-meta">
+              <span>{agent.runtime}</span>
+              <span>Queue {agent.queue}</span>
+              <span>{agent.updatedAt}</span>
+            </div>
+
+            <div className="agent-bars">
+              <MeterLine label="CPU" value={agent.cpu} suffix="%" />
+              <MeterLine label="Memory" value={agent.memory} suffix="%" />
+            </div>
+
             <div className="agent-metrics">
-              <Metric label="队列" value={String(agent.queue)} />
-              <Metric label="成功率" value={`${agent.successRate}%`} />
-              <Metric label="延迟" value={agent.latency} />
+              <Metric label="Uplink" value={`${agent.uplinkMbps} Mbps`} />
+              <Metric label="Downlink" value={`${agent.downlinkMbps} Mbps`} />
+              <Metric
+                label="Traffic"
+                value={`${agent.usedTrafficGb} / ${agent.quotaTrafficGb} GB`}
+              />
             </div>
           </article>
         ))}
@@ -47,11 +63,11 @@ export function AgentTable({ agents }: AgentViewsProps) {
   return (
     <section className="panel">
       <div className="section-heading compact">
-        <h2>Agent 明细</h2>
-        <div className="segmented">
-          <button className="selected">全部</button>
-          <button>在线</button>
-          <button>异常</button>
+        <h2>Agent detail</h2>
+        <div className="segmented" aria-label="Agent status filter">
+          <button className="selected">All</button>
+          <button>Online</button>
+          <button>Issues</button>
         </div>
       </div>
       <div className="table-wrap">
@@ -59,11 +75,13 @@ export function AgentTable({ agents }: AgentViewsProps) {
           <thead>
             <tr>
               <th>Agent</th>
-              <th>状态</th>
-              <th>队列</th>
-              <th>成功率</th>
-              <th>成本</th>
-              <th>更新</th>
+              <th>Status</th>
+              <th>Runtime</th>
+              <th>CPU</th>
+              <th>Memory</th>
+              <th>Up / Down</th>
+              <th>Traffic quota</th>
+              <th>Updated</th>
             </tr>
           </thead>
           <tbody>
@@ -76,9 +94,15 @@ export function AgentTable({ agents }: AgentViewsProps) {
                 <td>
                   <StatusPill status={agent.status} />
                 </td>
-                <td>{agent.queue}</td>
-                <td>{agent.successRate}%</td>
-                <td>{agent.cost}</td>
+                <td>{agent.runtime}</td>
+                <td>{agent.cpu}%</td>
+                <td>{agent.memory}%</td>
+                <td>
+                  {agent.uplinkMbps} / {agent.downlinkMbps} Mbps
+                </td>
+                <td>
+                  {agent.usedTrafficGb} / {agent.quotaTrafficGb} GB
+                </td>
                 <td>{agent.updatedAt}</td>
               </tr>
             ))}
@@ -98,6 +122,23 @@ function Metric({ label, value }: { label: string; value: string }) {
     <div>
       <span>{label}</span>
       <strong>{value}</strong>
+    </div>
+  );
+}
+
+function MeterLine({ label, value, suffix }: { label: string; value: number; suffix: string }) {
+  return (
+    <div className="meter-line">
+      <div>
+        <span>{label}</span>
+        <strong>
+          {value}
+          {suffix}
+        </strong>
+      </div>
+      <div className="meter-track">
+        <span style={{ width: `${value}%` }} />
+      </div>
     </div>
   );
 }

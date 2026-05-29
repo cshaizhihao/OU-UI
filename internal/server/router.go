@@ -20,7 +20,7 @@ func NewRouter(cfg config.ServerConfig, db *gorm.DB) *gin.Engine {
 
 	r.GET("/healthz", h.health)
 	r.GET("/", func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"name": "OU-UI", "version": "v0.1.0", "securePath": cfg.SecurePath})
+		c.JSON(http.StatusOK, gin.H{"name": "OU-UI", "version": "v0.3.0", "securePath": cfg.SecurePath})
 	})
 
 	root := r.Group(cfg.SecurePath)
@@ -30,8 +30,13 @@ func NewRouter(cfg config.ServerConfig, db *gorm.DB) *gin.Engine {
 	api.POST("/auth/login", h.login)
 	api.GET("/overview", h.requirePanelAuth(), h.overview)
 	api.GET("/agents", h.requirePanelAuth(), h.listAgents)
+	api.GET("/agents/install-script", h.requirePanelAuth(), h.agentInstallScript)
 	api.POST("/agents/register", h.requireJoinToken(), h.registerAgent)
 	api.POST("/agents/:id/heartbeat", h.requireAgentAuth(), h.agentHeartbeat)
+	api.GET("/agents/:id/tasks/next", h.requireAgentAuth(), h.agentNextTask)
+	api.PATCH("/agents/:id/tasks/:taskId", h.requireAgentAuth(), h.agentUpdateTask)
+	api.GET("/nodes", h.requirePanelAuth(), h.listNodes)
+	api.POST("/nodes", h.requirePanelAuth(), h.createNode)
 	api.GET("/tasks", h.requirePanelAuth(), h.listTasks)
 	api.POST("/tasks", h.requirePanelAuth(), h.createTask)
 

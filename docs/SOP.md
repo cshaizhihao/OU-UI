@@ -1,22 +1,16 @@
 # OU-UI SOP
 
-版本：`v0.1.0`
+版本：`v0.3.0`
 
 仓库：<https://github.com/cshaizhihao/OU-UI>
 
 ## 1. 安装前检查
 
-1. 确认目标机器已安装 Docker 和 Docker Compose。
-2. 确认当前用户有权限创建安装目录，例如 `/opt/ou-ui`。
-3. 确认目标端口未被占用，默认端口为 `3000`。
-4. 如需域名访问，确认域名所有权和 DNS 管理权限。
-5. 如需 SSL 自动签发，先阅读 acme.sh 和 DNS 服务商的官方文档，在本机安全地配置 DNS API 环境变量。
-
-禁止事项：
-
-- 不要把真实 token、密码、证书私钥写入仓库。
-- 不要把 `.env`、`data/`、`certs/`、日志或备份文件提交到 Git。
-- 不要在公共聊天、工单或截图中展示安装脚本生成的密码。
+1. 目标服务器建议使用 Linux，并确认当前用户可以创建安装目录，例如 `/opt/ou-ui`。
+2. 安装脚本会检测 Docker daemon 与 Docker Compose v2；如果只生成配置，可暂不启动 Docker。
+3. 默认 Web 端口为 `3000`，脚本会用 `ss`、`lsof` 或 `netstat` 检测端口占用。
+4. 如需域名访问，先确认 DNS A/AAAA 记录已指向当前服务器。
+5. 如需自动签发 SSL，先在当前 shell 中导出 DNS API 环境变量，例如 `CF_Token`；不要把真实 token 写入仓库、文档、日志或截图。
 
 ## 2. 标准安装
 
@@ -24,78 +18,81 @@
 bash scripts/install.sh
 ```
 
-按提示完成：
+脚本会依次完成：
 
-1. 阅读并确认安装声明。
-2. 输入安装目录。
-3. 输入 Web 端口。
-4. 选择是否绑定域名。
-5. 如绑定域名，确认 DNS 是否已经指向当前服务器。
-6. 如果输入域名，面板强制 HTTPS，并尝试使用 acme.sh + Cloudflare DNS 自动签发证书。
-7. 如果不输入域名，降级使用 `HTTP://IP:端口`。
-8. 脚本自动生成随机安全路径，例如 `/ds8a9f`。
-9. 确认是否生成 Docker Compose 配置并启动。
+1. 显示安装声明并要求确认。
+2. 检测系统、基础命令、安装目录和端口占用。
+3. 生成随机安全路径、管理员账号、管理员密码、JWT Secret 和 Agent 注册令牌。
+4. 按域名选择 HTTP 或 HTTPS 分支；输入域名后强制启用 HTTPS。
+5. 可选调用 `acme.sh + Cloudflare DNS` 签发证书，并校验 `fullchain.pem` 与 `privkey.pem`。
+6. 写入 `.env`、`docker-compose.yml` 和 `docs/agent-install.md`。
+7. 可选执行 `docker compose up -d --build`。
 
-安装完成后，记录脚本回显的管理员账号和密码。该密码不会再次从仓库中恢复。
+安装完成后，立即保存脚本回显的登录链接、管理员账号和密码。不要提交生成的 `.env`、证书私钥或运行日志。
 
-## 3. 域名、DNS、SSL 分支
+## 3. SSL 与 acme.sh
 
-### 3.1 不使用域名
+自动签发使用当前 shell 中的环境变量：
 
-适合内网或本地调试。访问地址格式：
-
-```text
-http://服务器IP:端口
+```bash
+export CF_Token="your-cloudflare-token"
+export ACME_EMAIL="admin@example.com"
+bash scripts/install.sh
 ```
 
-### 3.2 使用域名并强制 HTTPS
+脚本查找 acme.sh 的真实路径顺序：
 
-确认 DNS A/AAAA 记录已经指向服务器。只要输入域名，安装脚本就会强制使用 HTTPS，并优先走 acme.sh + Cloudflare DNS 自动签发证书。访问地址格式：
+1. `PATH` 中的 `acme.sh`
+2. `$HOME/.acme.sh/acme.sh`
+3. 未找到时通过 `https://get.acme.sh` 安装到当前用户目录
 
-```text
-https://域名:端口/安全路径
-```
-
-### 3.3 手动放置证书
-
-适合已有证书管理流程的团队。建议路径：
+证书默认安装到：
 
 ```text
 /opt/ou-ui/certs/fullchain.pem
 /opt/ou-ui/certs/privkey.pem
 ```
 
-证书私钥必须只保存在目标机器，不得提交到仓库。
+手动证书也必须放到同一路径，或在 `.env` 中设置 `OUUI_TLS_CERT_FILE` 与 `OUUI_TLS_KEY_FILE` 对应容器内路径。
 
-`v0.1.0` 的 Nginx 容器会在 `OUUI_ENABLE_SSL=yes` 时读取证书并启用 TLS 监听。
+## 4. Agent 安装入口
 
-### 3.4 acme.sh
+面板安装脚本会在安装目录生成：
 
-适合自动签发和续期。建议步骤：
+```text
+/opt/ou-ui/docs/agent-install.md
+```
 
-1. 安装 acme.sh。
-2. 在当前 shell 会话中配置 DNS 服务商要求的环境变量。
-3. 执行安装脚本并选择 acme.sh 分支。
-4. 安装脚本会执行签发和安装证书流程。
+该文件包含面向节点的 Agent 构建和启动命令，会引用本次生成的面板地址与 Agent 注册令牌。令牌只应在受控机器上使用，不要复制到仓库、工单或公共聊天中。
 
-注意：安装脚本从当前 shell 读取 `CF_Token`，不会把 DNS token 写入仓库或 `.env` 文件。
+## 5. CI
 
-## 4. 升级
+GitHub Actions 工作流位于 `.github/workflows/ci.yml`，覆盖：
 
-1. 备份安装目录中的 `.env` 和 `data/`。
+- `go test ./...`
+- 构建 `apps/server` 与 `apps/agent`
+- `pnpm typecheck` 与 `pnpm build`
+- `bash -n` 与 ShellCheck
+- Docker `web`、`server` target build
+- Gitleaks secret scan
+
+CI 不需要真实业务 token。secret scan 使用仓库上下文内的 `GITHUB_TOKEN`，不要新增项目级真实凭据。
+
+## 6. 升级
+
+1. 备份安装目录中的 `.env` 与 `data/`。
 2. 拉取新版本代码。
 3. 对比 `.env.example` 是否新增变量。
 4. 在安装目录执行：
 
 ```bash
-docker compose pull
 docker compose up -d --build
 docker compose ps
 ```
 
-5. 验证 Web 页面、日志和健康状态。
+5. 验证 Web 页面、Agent 注册、日志和健康状态。
 
-## 5. 回滚
+## 7. 回滚
 
 1. 停止当前服务：
 
@@ -105,42 +102,11 @@ docker compose down
 
 2. 切回上一版本镜像或上一份 Compose 文件。
 3. 恢复对应版本的数据备份。
-4. 启动服务并验证日志。
-
-## 6. 日常运维
-
-查看状态：
+4. 重新启动并查看日志：
 
 ```bash
-docker compose ps
+docker compose logs --tail=200
 ```
-
-查看日志：
-
-```bash
-docker compose logs -f --tail=200
-```
-
-重启：
-
-```bash
-docker compose restart
-```
-
-停止：
-
-```bash
-docker compose down
-```
-
-## 7. 安全检查清单
-
-- `.env` 权限是否为 `600`。
-- `certs/` 是否未进入 Git。
-- 端口是否只暴露必要范围。
-- 管理员密码是否已妥善保存。
-- 日志中是否没有 token、密码和证书私钥。
-- DNS token 是否只存在于用户受控的安全环境中。
 
 ## 8. 故障排查
 
@@ -150,21 +116,16 @@ docker compose down
 ss -lntp | grep 3000
 ```
 
-容器启动失败：
+Docker 未启动或权限不足：
 
 ```bash
-docker compose logs --tail=200
-```
-
-DNS 未生效：
-
-```bash
-dig +short example.com
+docker info
+docker compose version
 ```
 
 证书签发失败：
 
 1. 检查域名解析是否正确。
-2. 检查 DNS API 环境变量是否只在当前安全会话中配置。
-3. 查看 acme.sh 输出日志。
-4. 不要把失败日志中可能出现的敏感值提交或公开。
+2. 确认 `CF_Token` 只在当前安全 shell 会话中导出。
+3. 查看 acme.sh 输出，不要公开包含敏感值的日志。
+4. 重新运行安装脚本或手动放置证书后再启动服务。

@@ -1,72 +1,153 @@
-export type AgentStatus = "online" | "busy" | "idle" | "offline";
+export type AgentStatus = "online" | "degraded" | "offline";
+
+export type Runtime = "Xray" | "Hysteria2";
+
+export type Protocol = "VLESS Reality" | "VMess" | "Trojan" | "Shadowsocks" | "Hysteria2";
 
 export type Agent = {
   id: string;
   name: string;
-  role: string;
+  region: string;
   status: AgentStatus;
+  runtime: Runtime;
+  ip: string;
+  cpu: number;
+  memory: number;
+  uplinkMbps: number;
+  downlinkMbps: number;
+  usedTrafficGb: number;
+  quotaTrafficGb: number;
   queue: number;
-  successRate: number;
-  latency: string;
-  cost: string;
   updatedAt: string;
+};
+
+export type DeployTask = {
+  id: string;
+  agentId: string;
+  agentName: string;
+  runtime: Runtime;
+  protocol: Protocol;
+  action: string;
+  state: "queued" | "running" | "done" | "failed";
+  progress: number;
+  eta: string;
 };
 
 export const agents: Agent[] = [
   {
-    id: "ag-104",
-    name: "Atlas Planner",
-    role: "规划与拆解",
+    id: "ou-hkg-01",
+    name: "Hong Kong Edge 01",
+    region: "HK / HGC",
     status: "online",
-    queue: 8,
-    successRate: 98.2,
-    latency: "1.2s",
-    cost: "$18.42",
-    updatedAt: "刚刚"
+    runtime: "Xray",
+    ip: "10.18.4.21",
+    cpu: 34,
+    memory: 58,
+    uplinkMbps: 182,
+    downlinkMbps: 416,
+    usedTrafficGb: 684,
+    quotaTrafficGb: 1200,
+    queue: 3,
+    updatedAt: "18s ago"
   },
   {
-    id: "ag-219",
-    name: "Vector Analyst",
-    role: "数据分析",
-    status: "busy",
-    queue: 14,
-    successRate: 95.6,
-    latency: "2.4s",
-    cost: "$31.08",
-    updatedAt: "2 分钟前"
+    id: "ou-sin-02",
+    name: "Singapore Transit 02",
+    region: "SG / Equinix",
+    status: "online",
+    runtime: "Hysteria2",
+    ip: "10.21.9.44",
+    cpu: 51,
+    memory: 64,
+    uplinkMbps: 236,
+    downlinkMbps: 528,
+    usedTrafficGb: 921,
+    quotaTrafficGb: 1600,
+    queue: 5,
+    updatedAt: "42s ago"
   },
   {
-    id: "ag-331",
-    name: "Beacon Runner",
-    role: "自动化执行",
-    status: "idle",
-    queue: 2,
-    successRate: 99.1,
-    latency: "0.9s",
-    cost: "$12.77",
-    updatedAt: "8 分钟前"
+    id: "ou-tyo-03",
+    name: "Tokyo Relay 03",
+    region: "JP / SoftBank",
+    status: "degraded",
+    runtime: "Xray",
+    ip: "10.30.7.18",
+    cpu: 76,
+    memory: 72,
+    uplinkMbps: 91,
+    downlinkMbps: 204,
+    usedTrafficGb: 1036,
+    quotaTrafficGb: 1200,
+    queue: 9,
+    updatedAt: "2m ago"
   },
   {
-    id: "ag-407",
-    name: "Sentinel Guard",
-    role: "策略审计",
+    id: "ou-lax-04",
+    name: "Los Angeles Exit 04",
+    region: "US / LAX",
     status: "offline",
+    runtime: "Hysteria2",
+    ip: "10.42.2.11",
+    cpu: 0,
+    memory: 0,
+    uplinkMbps: 0,
+    downlinkMbps: 0,
+    usedTrafficGb: 438,
+    quotaTrafficGb: 1000,
     queue: 0,
-    successRate: 91.8,
-    latency: "--",
-    cost: "$6.19",
-    updatedAt: "维护中"
+    updatedAt: "maintenance"
   }
 ];
 
-export const taskRows = [
-  { name: "渠道归因日报", owner: "Vector Analyst", state: "运行中", progress: 76 },
-  { name: "客服质检采样", owner: "Sentinel Guard", state: "等待节点", progress: 34 },
-  { name: "销售线索评分", owner: "Atlas Planner", state: "已排队", progress: 18 }
+export const protocolOptions: Protocol[] = [
+  "VLESS Reality",
+  "VMess",
+  "Trojan",
+  "Shadowsocks",
+  "Hysteria2"
 ];
 
-export const nodeRows = [
-  { name: "hk-prod-a01", region: "Hong Kong", load: 68, health: "稳定" },
-  { name: "sg-edge-b03", region: "Singapore", load: 52, health: "稳定" },
-  { name: "jp-batch-c02", region: "Tokyo", load: 81, health: "高负载" }
+export const runtimeOptions: Runtime[] = ["Xray", "Hysteria2"];
+
+export const taskQueue: DeployTask[] = [
+  {
+    id: "job-23061",
+    agentId: "ou-hkg-01",
+    agentName: "Hong Kong Edge 01",
+    runtime: "Xray",
+    protocol: "VLESS Reality",
+    action: "Generate inbound and Reality shortId",
+    state: "running",
+    progress: 72,
+    eta: "1m 20s"
+  },
+  {
+    id: "job-23062",
+    agentId: "ou-sin-02",
+    agentName: "Singapore Transit 02",
+    runtime: "Hysteria2",
+    protocol: "Hysteria2",
+    action: "Refresh port-hopping policy",
+    state: "queued",
+    progress: 18,
+    eta: "3m 45s"
+  },
+  {
+    id: "job-23058",
+    agentId: "ou-tyo-03",
+    agentName: "Tokyo Relay 03",
+    runtime: "Xray",
+    protocol: "Trojan",
+    action: "Roll out certificate chain",
+    state: "done",
+    progress: 100,
+    eta: "done"
+  }
+];
+
+export const nodeHealthRows = [
+  { name: "Inbound handshake success", value: "99.32%", detail: "Reality / TLS fingerprint check" },
+  { name: "Queue wait median", value: "18s", detail: "Last 15 minutes" },
+  { name: "Dispatchable agents", value: "3 / 4", detail: "1 agent in maintenance" }
 ];

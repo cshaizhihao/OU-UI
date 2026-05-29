@@ -15,8 +15,6 @@ services:
       - ./certs:/app/certs:ro
     depends_on:
       - ou-ui-server
-    volumes:
-      - ./certs:/app/certs:ro
 
   ou-ui-server:
     image: ou-ui-server:local
