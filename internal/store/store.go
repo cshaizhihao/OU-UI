@@ -2,7 +2,7 @@ package store
 
 import (
 	"github.com/cshaizhihao/OU-UI/internal/models"
-	"gorm.io/driver/sqlite"
+	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
 )
 

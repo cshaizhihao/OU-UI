@@ -86,12 +86,22 @@ func bearerToken(c *gin.Context) string {
 
 func (h Handler) requirePanelAuth() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		claims, err := auth.Parse(h.cfg.JWTSecret, bearerToken(c))
+		token := bearerToken(c)
+		if h.authenticateAPIKey(c, token) {
+			c.Next()
+			return
+		}
+		claims, err := auth.Parse(h.cfg.JWTSecret, token)
 		if err != nil || claims.Kind != "panel" {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
 			return
 		}
 		c.Set("actor", claims.Subject)
+		c.Set("authKind", claims.Kind)
+		c.Set("tenantID", claims.TenantID)
+		c.Set("role", claims.Role)
+		c.Set("scopes", claims.Scopes)
+		c.Set("nodeAccess", claims.NodeAccess)
 		c.Next()
 	}
 }

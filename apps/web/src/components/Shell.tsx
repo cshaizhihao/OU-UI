@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import type { SessionUser } from "../api";
 
 const navItems = [
   { label: "Overview", href: "#overview" },
@@ -12,9 +13,11 @@ const navItems = [
 
 type ShellProps = {
   children: ReactNode;
+  onLogout?: () => void;
+  user?: SessionUser | null;
 };
 
-export function Shell({ children }: ShellProps) {
+export function Shell({ children, onLogout, user }: ShellProps) {
   return (
     <div className="app-shell">
       <aside className="sidebar" aria-label="Main navigation">
@@ -27,14 +30,14 @@ export function Shell({ children }: ShellProps) {
         </div>
         <nav className="nav-list">
           {navItems.map((item, index) => (
-            <a className={index === 0 ? "nav-item active" : "nav-item"} href={item.href} key={item.href}>
+            <a className={index === 0 ? "nav-item active" : "nav-item"} href={item.href} key={item.label}>
               <span className="nav-dot" />
               {item.label}
             </a>
           ))}
         </nav>
         <div className="sidebar-footer">
-          <span>v1.1.0</span>
+          <span>v3.0.0</span>
           <strong>Control plane online</strong>
         </div>
       </aside>
@@ -45,6 +48,12 @@ export function Shell({ children }: ShellProps) {
             <h1>OU-UI Proxy Node Management Console</h1>
           </div>
           <div className="topbar-actions">
+            {user ? (
+              <div className="user-chip" title={user.tenantId || "root tenant"}>
+                <strong>{user.username}</strong>
+                <span>{user.role}</span>
+              </div>
+            ) : null}
             <label className="search">
               <span>Search</span>
               <input placeholder="Agent, protocol, node, or task ID" />
@@ -53,6 +62,9 @@ export function Shell({ children }: ShellProps) {
               !
             </button>
             <button className="primary-button">New delivery</button>
+            <button className="ghost-button" onClick={onLogout} type="button">
+              Sign out
+            </button>
           </div>
         </header>
         {children}

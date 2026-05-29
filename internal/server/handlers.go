@@ -1,4 +1,4 @@
-﻿package server
+package server
 
 import (
 	"crypto/rand"
@@ -80,16 +80,65 @@ func (h Handler) login(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request"})
 		return
 	}
-	if req.Username != h.cfg.AdminUser || req.Password != h.cfg.AdminPassword {
+	username := strings.TrimSpace(req.Username)
+	if username == h.cfg.AdminUser && req.Password == h.cfg.AdminPassword {
+		token, err := auth.IssueWithOptions(h.cfg.JWTSecret, username, "panel", 12*time.Hour, auth.IssueOptions{
+			Role:       "owner",
+			Scopes:     []string{"*"},
+			NodeAccess: []string{"*"},
+		})
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "issue token failed"})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{
+			"token":     token,
+			"expiresIn": 43200,
+			"user": gin.H{
+				"id":       "admin",
+				"username": username,
+				"role":     "owner",
+				"tenantId": "",
+			},
+		})
+		return
+	}
+	var user models.PanelUser
+	if err := h.db.Where("username = ? AND status = ?", username, "active").First(&user).Error; err != nil || user.PasswordSHA != hashSecret(req.Password) {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid credentials"})
 		return
 	}
-	token, err := auth.Issue(h.cfg.JWTSecret, req.Username, "panel", 12*time.Hour)
+	var tenant models.Tenant
+	if user.TenantID != "" {
+		if err := h.db.Where("id = ? AND status = ?", user.TenantID, "active").First(&tenant).Error; err != nil {
+			c.JSON(http.StatusForbidden, gin.H{"error": "tenant is disabled"})
+			return
+		}
+	}
+	nodeAccess := stringListFromJSON(user.NodeAccess)
+	if len(nodeAccess) == 0 && len(tenant.NodeAccess) > 0 {
+		nodeAccess = stringListFromJSON(tenant.NodeAccess)
+	}
+	token, err := auth.IssueWithOptions(h.cfg.JWTSecret, user.ID, "panel", 12*time.Hour, auth.IssueOptions{
+		TenantID:   user.TenantID,
+		Role:       user.Role,
+		Scopes:     []string{"panel:read", "panel:write"},
+		NodeAccess: nodeAccess,
+	})
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "issue token failed"})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"token": token, "expiresIn": 43200})
+	c.JSON(http.StatusOK, gin.H{
+		"token":     token,
+		"expiresIn": 43200,
+		"user": gin.H{
+			"id":       user.ID,
+			"username": user.Username,
+			"role":     user.Role,
+			"tenantId": user.TenantID,
+		},
+	})
 }
 
 func (h Handler) overview(c *gin.Context) {
@@ -117,7 +166,11 @@ func (h Handler) overview(c *gin.Context) {
 
 func (h Handler) listAgents(c *gin.Context) {
 	var agents []models.Agent
-	if err := h.db.Order("updated_at desc").Find(&agents).Error; err != nil {
+	query := h.db.Order("updated_at desc")
+	if allowed, limited := nodeAccessFilter(c); limited {
+		query = query.Where("id IN ?", allowed)
+	}
+	if err := query.Find(&agents).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "query agents failed"})
 		return
 	}
@@ -355,13 +408,17 @@ func (h Handler) createTask(c *gin.Context) {
 		c.JSON(status, gin.H{"error": err.Error()})
 		return
 	}
+	if !canAccessNode(c, req.AgentID) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "agent is outside current tenant access"})
+		return
+	}
 	payload, _ := json.Marshal(req.Payload)
 	task := models.Task{
-		ID:      "tsk_" + randomHex(8),
-		AgentID: req.AgentID,
-		Type:    req.Type,
-		Status:  models.TaskStatusQueued,
-		Payload: datatypes.JSON(payload),
+		ID:          "tsk_" + randomHex(8),
+		AgentID:     req.AgentID,
+		Type:        req.Type,
+		Status:      models.TaskStatusQueued,
+		Payload:     datatypes.JSON(payload),
 		MaxAttempts: normalizeMaxAttempts(req.MaxAttempts),
 	}
 	if err := h.db.Create(&task).Error; err != nil {
@@ -471,7 +528,11 @@ func (h Handler) agentUpdateTask(c *gin.Context) {
 
 func (h Handler) listNodes(c *gin.Context) {
 	var nodes []models.Node
-	if err := h.db.Order("updated_at desc").Find(&nodes).Error; err != nil {
+	query := h.db.Order("updated_at desc")
+	if allowed, limited := nodeAccessFilter(c); limited {
+		query = query.Where("id IN ? OR agent_id IN ?", allowed, allowed)
+	}
+	if err := query.Find(&nodes).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "query nodes failed"})
 		return
 	}
@@ -527,6 +588,10 @@ func (h Handler) createNode(c *gin.Context) {
 		c.JSON(status, gin.H{"error": err.Error()})
 		return
 	}
+	if !canAccessNode(c, req.AgentID) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "agent is outside current tenant access"})
+		return
+	}
 	specJSON, _ := json.Marshal(spec)
 	nodeID := "nod_" + randomHex(8)
 	taskID := "tsk_" + randomHex(8)
@@ -542,11 +607,11 @@ func (h Handler) createNode(c *gin.Context) {
 	}
 	taskPayload, _ := json.Marshal(map[string]any{"nodeId": nodeID, "spec": spec})
 	task := models.Task{
-		ID:      taskID,
-		AgentID: req.AgentID,
-		Type:    models.TaskTypeNodeDeploy,
-		Status:  models.TaskStatusQueued,
-		Payload: datatypes.JSON(taskPayload),
+		ID:          taskID,
+		AgentID:     req.AgentID,
+		Type:        models.TaskTypeNodeDeploy,
+		Status:      models.TaskStatusQueued,
+		Payload:     datatypes.JSON(taskPayload),
 		MaxAttempts: 2,
 	}
 	if err := h.db.Transaction(func(tx *gorm.DB) error {
@@ -928,5 +993,3 @@ func normalizeProtocol(value string) string {
 		return ""
 	}
 }
-
-

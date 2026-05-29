@@ -1,4 +1,20 @@
-export function LoginPage() {
+import { FormEvent, useState } from "react";
+
+type LoginPageProps = {
+  loading?: boolean;
+  error?: string;
+  onLogin: (username: string, password: string) => Promise<void>;
+};
+
+export function LoginPage({ loading = false, error = "", onLogin }: LoginPageProps) {
+  const [username, setUsername] = useState("admin");
+  const [password, setPassword] = useState("");
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    await onLogin(username, password);
+  }
+
   return (
     <section className="login-page">
       <div className="login-panel">
@@ -9,15 +25,27 @@ export function LoginPage() {
             <span>Node Control Console</span>
           </div>
         </div>
-        <form className="login-form">
+        <form className="login-form" onSubmit={handleSubmit}>
           <label>
-            Work email
-            <input type="email" placeholder="name@company.com" />
+            Username
+            <input
+              autoComplete="username"
+              onChange={(event) => setUsername(event.target.value)}
+              placeholder="admin"
+              value={username}
+            />
           </label>
           <label>
             Password
-            <input type="password" placeholder="Enter password" />
+            <input
+              autoComplete="current-password"
+              onChange={(event) => setPassword(event.target.value)}
+              placeholder="Enter password"
+              type="password"
+              value={password}
+            />
           </label>
+          {error ? <p className="login-error">{error}</p> : null}
           <div className="form-row">
             <label className="checkline">
               <input type="checkbox" defaultChecked />
@@ -25,8 +53,8 @@ export function LoginPage() {
             </label>
             <a href="#reset">Reset password</a>
           </div>
-          <button className="primary-button" type="button">
-            Sign in
+          <button className="primary-button" disabled={loading} type="submit">
+            {loading ? "Signing in" : "Sign in"}
           </button>
         </form>
       </div>

@@ -27,6 +27,11 @@ button {
   cursor: pointer;
 }
 
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.66;
+}
+
 a {
   color: inherit;
 }
@@ -55,6 +60,17 @@ a {
 .login-form {
   display: grid;
   gap: 16px;
+}
+
+.login-error {
+  margin: 0;
+  border: 1px solid #fecaca;
+  border-radius: 8px;
+  padding: 10px 12px;
+  color: #be123c;
+  background: #fff1f2;
+  font-size: 13px;
+  font-weight: 800;
 }
 
 .login-form label,
@@ -278,6 +294,35 @@ select:focus {
   gap: 10px;
 }
 
+.user-chip {
+  display: grid;
+  min-width: 132px;
+  min-height: 42px;
+  align-content: center;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  padding: 6px 10px;
+  background: #ffffff;
+}
+
+.user-chip strong,
+.user-chip span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.user-chip strong {
+  color: #0f172a;
+  font-size: 13px;
+}
+
+.user-chip span {
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 800;
+}
+
 .primary-button,
 .ghost-button,
 .icon-button,
@@ -312,6 +357,46 @@ select:focus {
 .dashboard {
   display: grid;
   gap: 20px;
+}
+
+.notice-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  border: 1px solid #bfdbfe;
+  border-radius: 8px;
+  padding: 12px 14px;
+  color: #1e3a8a;
+  background: #eff6ff;
+}
+
+.notice-row strong {
+  font-size: 14px;
+}
+
+.skeleton-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.skeleton-grid span {
+  height: 104px;
+  border-radius: 8px;
+  background: linear-gradient(90deg, #e2e8f0 0%, #f8fafc 45%, #e2e8f0 100%);
+  background-size: 220% 100%;
+  animation: skeleton-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes skeleton-pulse {
+  from {
+    background-position: 0% 0;
+  }
+
+  to {
+    background-position: -220% 0;
+  }
 }
 
 .kpi-grid,
@@ -1112,13 +1197,15 @@ td span {
 
   .topbar,
   .topbar-actions,
-  .section-heading {
+  .section-heading,
+  .notice-row {
     align-items: stretch;
     flex-direction: column;
   }
 
   .kpi-grid,
   .agent-grid,
+  .skeleton-grid,
   .dispatch-form {
     grid-template-columns: 1fr;
   }

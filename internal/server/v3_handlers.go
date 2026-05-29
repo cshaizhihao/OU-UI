@@ -56,6 +56,10 @@ func (h Handler) createNetworkOptimization(c *gin.Context) {
 		c.JSON(status, gin.H{"error": err.Error()})
 		return
 	}
+	if !canAccessNode(c, c.Param("id")) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "agent is outside current tenant access"})
+		return
+	}
 	body, _ := json.Marshal(payload)
 	task := models.Task{
 		ID:          "tsk_" + randomHex(8),
@@ -182,7 +186,11 @@ func (h Handler) listNodeTraffic(c *gin.Context) {
 		CollectedAt time.Time `json:"collectedAt"`
 	}
 	var samples []models.NodeTrafficSample
-	if err := h.db.Order("collected_at desc").Limit(500).Find(&samples).Error; err != nil {
+	query := h.db.Order("collected_at desc").Limit(500)
+	if allowed, limited := nodeAccessFilter(c); limited {
+		query = query.Where("node_id IN ? OR agent_id IN ?", allowed, allowed)
+	}
+	if err := query.Find(&samples).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "query traffic failed"})
 		return
 	}
@@ -214,6 +222,10 @@ func (h Handler) listNodeTraffic(c *gin.Context) {
 
 func (h Handler) listNodeTrafficSamples(c *gin.Context) {
 	var samples []models.NodeTrafficSample
+	if !canAccessNode(c, c.Param("id")) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "node is outside current tenant access"})
+		return
+	}
 	if err := h.db.Where("node_id = ?", c.Param("id")).Order("collected_at desc").Limit(limitFromQuery(c, 288)).Find(&samples).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "query node traffic samples failed"})
 		return
@@ -760,7 +772,7 @@ type clashProfileRequest struct {
 	Name          string           `json:"name"`
 	RuleProviders []map[string]any `json:"ruleProviders"`
 	ProxyGroups   []map[string]any `json:"proxyGroups"`
-	RoutingRules   []string         `json:"routingRules"`
+	RoutingRules  []string         `json:"routingRules"`
 }
 
 func (h Handler) listClashProfiles(c *gin.Context) {
@@ -784,8 +796,8 @@ func (h Handler) createClashProfile(c *gin.Context) {
 		Name:          strings.TrimSpace(req.Name),
 		RuleProviders: mustJSON(req.RuleProviders),
 		ProxyGroups:   mustJSON(req.ProxyGroups),
-		RoutingRules:   mustJSON(req.RoutingRules),
-		GeneratedYAML:  yaml,
+		RoutingRules:  mustJSON(req.RoutingRules),
+		GeneratedYAML: yaml,
 	}
 	if err := h.db.Create(&profile).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "create clash profile failed"})
@@ -1045,22 +1057,22 @@ func (h Handler) createAPIKey(c *gin.Context) {
 func (h Handler) apiDocs(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"openapi": "3.1.0",
-		"info": gin.H{"title": "OU-UI REST API", "version": "v3.0.0"},
+		"info":    gin.H{"title": "OU-UI REST API", "version": "v3.0.0"},
 		"servers": []gin.H{{"url": h.cfg.SecurePath + "/api/v1"}},
 		"paths": gin.H{
-			"/agents":                    gin.H{"get": gin.H{"summary": "List agents"}},
+			"/agents":                           gin.H{"get": gin.H{"summary": "List agents"}},
 			"/agents/{id}/network-optimization": gin.H{"post": gin.H{"summary": "Queue BBR/sysctl host optimization"}},
-			"/nodes":                     gin.H{"get": gin.H{"summary": "List managed nodes"}, "post": gin.H{"summary": "Create managed node"}},
-			"/traffic/nodes":             gin.H{"get": gin.H{"summary": "List latest per-node traffic samples"}},
-			"/routing/rules":             gin.H{"get": gin.H{"summary": "List routing rules"}, "post": gin.H{"summary": "Create routing rule"}},
-			"/load-balancers":            gin.H{"get": gin.H{"summary": "List HA groups"}, "post": gin.H{"summary": "Create HA group"}},
-			"/webhooks":                  gin.H{"get": gin.H{"summary": "List alert webhooks"}, "post": gin.H{"summary": "Create alert webhook"}},
-			"/subscriptions":             gin.H{"get": gin.H{"summary": "List external subscriptions"}, "post": gin.H{"summary": "Create external subscription"}},
-			"/clash/profiles":            gin.H{"get": gin.H{"summary": "List Clash profiles"}, "post": gin.H{"summary": "Create Clash profile"}},
-			"/tenants":                   gin.H{"get": gin.H{"summary": "List tenants"}, "post": gin.H{"summary": "Create tenant"}},
-			"/users":                     gin.H{"get": gin.H{"summary": "List panel users"}, "post": gin.H{"summary": "Create panel user"}},
-			"/api-keys":                  gin.H{"post": gin.H{"summary": "Create API key"}},
-			"/copilot/ask":               gin.H{"post": gin.H{"summary": "Ask AI operations copilot"}},
+			"/nodes":                            gin.H{"get": gin.H{"summary": "List managed nodes"}, "post": gin.H{"summary": "Create managed node"}},
+			"/traffic/nodes":                    gin.H{"get": gin.H{"summary": "List latest per-node traffic samples"}},
+			"/routing/rules":                    gin.H{"get": gin.H{"summary": "List routing rules"}, "post": gin.H{"summary": "Create routing rule"}},
+			"/load-balancers":                   gin.H{"get": gin.H{"summary": "List HA groups"}, "post": gin.H{"summary": "Create HA group"}},
+			"/webhooks":                         gin.H{"get": gin.H{"summary": "List alert webhooks"}, "post": gin.H{"summary": "Create alert webhook"}},
+			"/subscriptions":                    gin.H{"get": gin.H{"summary": "List external subscriptions"}, "post": gin.H{"summary": "Create external subscription"}},
+			"/clash/profiles":                   gin.H{"get": gin.H{"summary": "List Clash profiles"}, "post": gin.H{"summary": "Create Clash profile"}},
+			"/tenants":                          gin.H{"get": gin.H{"summary": "List tenants"}, "post": gin.H{"summary": "Create tenant"}},
+			"/users":                            gin.H{"get": gin.H{"summary": "List panel users"}, "post": gin.H{"summary": "Create panel user"}},
+			"/api-keys":                         gin.H{"post": gin.H{"summary": "Create API key"}},
+			"/copilot/ask":                      gin.H{"post": gin.H{"summary": "Ask AI operations copilot"}},
 		},
 	})
 }
@@ -1096,7 +1108,7 @@ func (h Handler) askCopilot(c *gin.Context) {
 	}
 	rawContext, _ := json.Marshal(context)
 	incident := models.CopilotIncident{
-		ID:      "cop_" + randomHex(8),
+		ID:       "cop_" + randomHex(8),
 		Question: strings.TrimSpace(req.Question),
 		Context:  datatypes.JSON(rawContext),
 		Answer:   answer,

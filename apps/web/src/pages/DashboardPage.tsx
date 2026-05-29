@@ -20,24 +20,47 @@ import {
   runtimeOptions,
   taskQueue
 } from "../data";
+import type { DashboardDTO } from "../api";
 
-const onlineAgents = agents.filter((agent) => agent.status === "online").length;
-const totalUplink = agents.reduce((sum, agent) => sum + agent.uplinkMbps, 0);
-const totalDownlink = agents.reduce((sum, agent) => sum + agent.downlinkMbps, 0);
-const usedTraffic = agents.reduce((sum, agent) => sum + agent.usedTrafficGb, 0);
-const quotaTraffic = agents.reduce((sum, agent) => sum + agent.quotaTrafficGb, 0);
+type DashboardPageProps = {
+  data: DashboardDTO | null;
+  loading?: boolean;
+  error?: string;
+  onRefresh?: () => void;
+};
 
-const kpis = [
-  { label: "Online agents", value: `${onlineAgents} / ${agents.length}`, delta: "1 degraded" },
-  { label: "Avg CPU", value: "40%", delta: "Peak 76%" },
-  { label: "Avg memory", value: "49%", delta: "Stable" },
-  { label: "Up / Down total", value: `${totalUplink} / ${totalDownlink} Mbps`, delta: "Live sample" },
-  { label: "Traffic used", value: `${usedTraffic} GB`, delta: `Quota ${quotaTraffic} GB` }
-];
+export function DashboardPage({ data, loading = false, error = "", onRefresh }: DashboardPageProps) {
+  const liveAgents = data?.agents.length ? data.agents : agents;
+  const onlineAgents = data?.overview.agentsOnline ?? liveAgents.filter((agent) => agent.status === "online").length;
+  const totalUplink = liveAgents.reduce((sum, agent) => sum + agent.uplinkMbps, 0);
+  const totalDownlink = liveAgents.reduce((sum, agent) => sum + agent.downlinkMbps, 0);
+  const usedTraffic = liveAgents.reduce((sum, agent) => sum + agent.usedTrafficGb, 0);
+  const quotaTraffic = liveAgents.reduce((sum, agent) => sum + agent.quotaTrafficGb, 0);
+  const avgCPU = liveAgents.length
+    ? Math.round(liveAgents.reduce((sum, agent) => sum + agent.cpu, 0) / liveAgents.length)
+    : 0;
+  const avgMemory = liveAgents.length
+    ? Math.round(liveAgents.reduce((sum, agent) => sum + agent.memory, 0) / liveAgents.length)
+    : 0;
+  const kpis = [
+    { label: "Online agents", value: `${onlineAgents} / ${data?.overview.agentsTotal ?? liveAgents.length}`, delta: data?.overview.version ?? "Fixture fallback" },
+    { label: "Avg CPU", value: `${avgCPU}%`, delta: "Live heartbeat" },
+    { label: "Avg memory", value: `${avgMemory}%`, delta: "Runtime sample" },
+    { label: "Up / Down total", value: `${totalUplink} / ${totalDownlink} Mbps`, delta: "Live sample" },
+    { label: "Traffic used", value: `${usedTraffic} GB`, delta: `Quota ${quotaTraffic} GB` }
+  ];
 
-export function DashboardPage() {
   return (
     <div className="dashboard">
+      {error ? (
+        <section className="notice-row">
+          <strong>{error}</strong>
+          <button className="ghost-button" onClick={onRefresh} type="button">
+            Retry
+          </button>
+        </section>
+      ) : null}
+      {loading ? <DashboardSkeleton /> : null}
       <section className="kpi-grid" id="overview">
         {kpis.map((kpi) => (
           <article className="kpi-card" key={kpi.label}>
@@ -48,7 +71,7 @@ export function DashboardPage() {
         ))}
       </section>
 
-      <AgentCards agents={agents} />
+      <AgentCards agents={liveAgents} />
 
       <div className="split-grid">
         <section className="panel" id="deploy">
@@ -62,8 +85,8 @@ export function DashboardPage() {
           <form className="dispatch-form">
             <label>
               Agent
-              <select defaultValue={agents[0].id}>
-                {agents.map((agent) => (
+              <select defaultValue={liveAgents[0]?.id}>
+                {liveAgents.map((agent) => (
                   <option value={agent.id} key={agent.id}>
                     {agent.name} - {agent.region}
                   </option>
@@ -227,7 +250,7 @@ export function DashboardPage() {
         </div>
       </section>
 
-      <AgentTable agents={agents} />
+      <AgentTable agents={liveAgents} />
     </div>
   );
 }
@@ -238,4 +261,14 @@ function formatServiceStatus(status: string): string {
     .replace(/\s+/g, " ")
     .trim()
     .replace(/\b[a-z]/g, (letter) => letter.toUpperCase());
+}
+
+function DashboardSkeleton() {
+  return (
+    <section className="skeleton-grid" aria-label="Dashboard loading">
+      {Array.from({ length: 5 }).map((_, index) => (
+        <span key={index} />
+      ))}
+    </section>
+  );
 }
