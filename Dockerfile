@@ -11,10 +11,12 @@ FROM golang:1.24-alpine AS server-builder
 WORKDIR /src
 RUN apk add --no-cache gcc musl-dev
 COPY go.mod ./
-RUN go mod download
 COPY apps/server apps/server
+COPY apps/agent apps/agent
 COPY internal internal
+RUN go mod tidy
 RUN CGO_ENABLED=1 GOOS=linux go build -o /out/ou-ui-server ./apps/server
+RUN CGO_ENABLED=1 GOOS=linux go build -o /out/ou-ui-agent ./apps/agent
 
 FROM nginx:1.27-alpine AS web
 COPY --from=web-builder /src/apps/web/dist /usr/share/nginx/html
@@ -26,5 +28,6 @@ FROM alpine:3.20 AS server
 WORKDIR /app
 RUN apk add --no-cache ca-certificates
 COPY --from=server-builder /out/ou-ui-server /app/ou-ui-server
+COPY --from=server-builder /out/ou-ui-agent /app/ou-ui-agent
 EXPOSE 8080
 CMD ["/app/ou-ui-server"]

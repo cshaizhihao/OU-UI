@@ -287,16 +287,16 @@ write_agent_install_doc() {
 
 面板安装脚本已生成 Agent 注册令牌。请在需要接入的节点上使用下面的命令构建并运行 Agent。
 
-```bash
-git clone $REPO_URL
-cd OU-UI
-go build -o ou-ui-agent ./apps/agent
-./ou-ui-agent \\
-  -server "$LOGIN_URL" \\
-  -token "$AGENT_JOIN_TOKEN" \\
-  -name "\$(hostname)" \\
-  -interval "$DEFAULT_AGENT_INTERVAL"
-```
+命令示例：
+
+    git clone $REPO_URL
+    cd OU-UI
+    go build -o ou-ui-agent ./apps/agent
+    ./ou-ui-agent \\
+      -server "$LOGIN_URL" \\
+      -token "$AGENT_JOIN_TOKEN" \\
+      -name "\$(hostname)" \\
+      -interval "$DEFAULT_AGENT_INTERVAL"
 
 注意事项：
 - 不要把 Agent 注册令牌写入仓库、工单、截图或日志。
