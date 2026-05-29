@@ -26,7 +26,7 @@ func TestProviderRenderVLESSReality(t *testing.T) {
 		},
 	}
 
-	rendered, err := Provider{}.Render(spec)
+	rendered, err := (Provider{}).Render(spec)
 	if err != nil {
 		t.Fatalf("Render() error = %v", err)
 	}
@@ -74,7 +74,7 @@ func TestProviderValidateRejectsInvalidInputs(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if err := Provider{}.Validate(tt.spec); err == nil {
+			if err := (Provider{}).Validate(tt.spec); err == nil {
 				t.Fatal("Validate() error = nil, want non-nil")
 			}
 		})
