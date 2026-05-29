@@ -1,0 +1,37 @@
+services:
+  ou-ui-web:
+    image: ou-ui-web:local
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: web
+    container_name: ou-ui-web
+    restart: unless-stopped
+    env_file:
+      - .env
+    ports:
+      - "${OUUI_PANEL_PORT:-3000}:3000"
+    volumes:
+      - ./certs:/app/certs:ro
+    depends_on:
+      - ou-ui-server
+    volumes:
+      - ./certs:/app/certs:ro
+
+  ou-ui-server:
+    image: ou-ui-server:local
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: server
+    container_name: ou-ui-server
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      OUUI_HOST: "0.0.0.0"
+      OUUI_PORT: "8080"
+      OUUI_DB: "/app/data/ou-ui.db"
+    volumes:
+      - ./data:/app/data
+      - ./certs:/app/certs:ro
