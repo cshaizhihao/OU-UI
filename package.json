@@ -1,0 +1,17 @@
+{
+  "name": "ou-ui-panel",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "pnpm --filter @ou-ui/web dev",
+    "build": "pnpm --filter @ou-ui/web build",
+    "preview": "pnpm --filter @ou-ui/web preview",
+    "typecheck": "pnpm --filter @ou-ui/web typecheck"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^5.0.0",
+    "vite": "^7.0.0",
+    "typescript": "^5.8.0"
+  }
+}
