@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/cshaizhihao/OU-UI/internal/deploy"
 	"github.com/cshaizhihao/OU-UI/internal/provider"
 )
 
@@ -17,6 +18,14 @@ var supportedProtocols = map[string]struct{}{
 	ProtocolVMess:       {},
 	ProtocolTrojan:      {},
 	ProtocolShadowsocks: {},
+}
+
+var xrayRuntime = deploy.RuntimeManager{
+	RuntimeName: "xray",
+	BinaryNames: []string{"xray", "xray-core"},
+	ServiceName: "xray",
+	ConfigExt:   "json",
+	TCPHealth:   true,
 }
 
 func (p Provider) Validate(spec provider.NodeSpec) error {
@@ -50,6 +59,26 @@ func (Provider) Apply(ctx context.Context, spec provider.NodeSpec) error {
 
 func (Provider) Remove(ctx context.Context, nodeID string) error {
 	return ctx.Err()
+}
+
+func (Provider) Install(ctx context.Context, req provider.DeployRequest) (provider.StageResult, error) {
+	return xrayRuntime.Install(ctx, req)
+}
+
+func (Provider) ApplyConfig(ctx context.Context, req provider.DeployRequest) (provider.ApplyResult, error) {
+	return xrayRuntime.ApplyConfig(ctx, req)
+}
+
+func (Provider) Reload(ctx context.Context, req provider.DeployRequest) (provider.StageResult, error) {
+	return xrayRuntime.Reload(ctx, req)
+}
+
+func (Provider) Health(ctx context.Context, req provider.DeployRequest) (provider.HealthResult, error) {
+	return xrayRuntime.Health(ctx, req)
+}
+
+func (Provider) Rollback(ctx context.Context, req provider.RollbackRequest) (provider.StageResult, error) {
+	return xrayRuntime.Rollback(ctx, req)
 }
 
 func ConfigFromNodeSpec(spec provider.NodeSpec) (Config, error) {

@@ -1,6 +1,18 @@
-import { AgentCards, AgentTable, TaskStatePill } from "../components/AgentViews";
+import {
+  AgentCards,
+  AgentTable,
+  RuntimeApplyPipeline,
+  TaskStatePill
+} from "../components/AgentViews";
 import { AnalyticsPanel } from "../components/Charts";
-import { getDeployTaskState, getRuntimeLabel, getTaskProgress } from "../controlFields";
+import {
+  getDeployRuntimeApply,
+  getDeployTaskState,
+  getRuntimeLabel,
+  getTaskProgress,
+  runtimeApplyStageLabel,
+  runtimeApplyStages
+} from "../controlFields";
 import {
   agents,
   nodeHealthRows,
@@ -43,7 +55,7 @@ export function DashboardPage() {
           <div className="section-heading">
             <div>
               <p className="eyebrow">Node Dispatch</p>
-              <h2>Node delivery</h2>
+              <h2>Runtime apply</h2>
             </div>
             <button className="primary-button">Enqueue</button>
           </div>
@@ -92,16 +104,22 @@ export function DashboardPage() {
               <span key={protocol}>{protocol}</span>
             ))}
           </div>
+          <div className="protocol-strip" aria-label="Runtime apply stages">
+            {runtimeApplyStages.map((stage) => (
+              <span key={stage}>{runtimeApplyStageLabel[stage]}</span>
+            ))}
+          </div>
         </section>
 
         <section className="panel" id="queue">
           <div className="section-heading compact">
-            <h2>Task queue</h2>
+            <h2>Runtime apply queue</h2>
             <button className="ghost-button">Pause queue</button>
           </div>
           <div className="task-list">
             {taskQueue.map((task) => {
               const taskState = getDeployTaskState(task);
+              const runtimeApply = getDeployRuntimeApply(task);
               const progress = getTaskProgress(task);
 
               return (
@@ -124,8 +142,31 @@ export function DashboardPage() {
                   <div className="task-meta">
                     <span>{task.id}</span>
                     <TaskStatePill status={taskState.status} />
+                    <span>{runtimeApply.runtimeVersion}</span>
+                    <span>{formatServiceStatus(runtimeApply.serviceStatus)}</span>
+                    <span>
+                      {runtimeApply.rollbackAvailable
+                        ? "Rollback available"
+                        : "Rollback unavailable"}
+                    </span>
                     <span>Retries {taskState.retryCount}</span>
                   </div>
+                  <div className="task-runtime-detail">
+                    <div>
+                      <span>Apply stage</span>
+                      <strong>{runtimeApplyStageLabel[runtimeApply.currentStage]}</strong>
+                    </div>
+                    <div>
+                      <span>Config path</span>
+                      <strong title={runtimeApply.configPath}>{runtimeApply.configPath}</strong>
+                    </div>
+                  </div>
+                  <RuntimeApplyPipeline apply={runtimeApply} />
+                  {runtimeApply.failureStage ? (
+                    <p className="task-reason">
+                      Failed stage: {runtimeApplyStageLabel[runtimeApply.failureStage]}
+                    </p>
+                  ) : null}
                   {taskState.failureReason ? (
                     <p className="task-reason">
                       Failure reason: {taskState.failureReason}
@@ -161,4 +202,12 @@ export function DashboardPage() {
       <AgentTable agents={agents} />
     </div>
   );
+}
+
+function formatServiceStatus(status: string): string {
+  return status
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/\b[a-z]/g, (letter) => letter.toUpperCase());
 }

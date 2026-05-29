@@ -342,8 +342,8 @@ select:focus {
 }
 
 .kpi-card span,
-.agent-card span,
-td span {
+.agent-card span:not(.status):not(.task-state):not(.runtime-stage):not(.capability-chip):not(.failure-stage),
+td span:not(.status):not(.task-state):not(.runtime-stage):not(.capability-chip):not(.failure-stage) {
   color: #64748b;
   font-size: 13px;
 }
@@ -378,7 +378,7 @@ td span {
 }
 
 .agent-grid {
-  grid-template-columns: repeat(4, minmax(240px, 1fr));
+  grid-template-columns: repeat(4, minmax(280px, 1fr));
 }
 
 .agent-card {
@@ -423,7 +423,7 @@ td span {
 
 .agent-card-meta span,
 .protocol-strip span,
-.task-meta span {
+.task-meta > span:not(.task-state) {
   border: 1px solid #d8dee9;
   border-radius: 999px;
   padding: 5px 8px;
@@ -440,7 +440,8 @@ td span {
 }
 
 .control-summary > div,
-.agent-task-summary {
+.agent-task-summary,
+.runtime-apply-summary {
   min-width: 0;
   border: 1px solid #e2e8f0;
   border-radius: 8px;
@@ -483,6 +484,109 @@ td span {
 
 .failure-reason {
   grid-column: 1 / -1;
+}
+
+.runtime-apply-summary {
+  display: grid;
+  gap: 10px;
+}
+
+.runtime-apply-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.runtime-apply-head > div,
+.runtime-apply-meta > div,
+.runtime-cell,
+.config-cell,
+.task-runtime-detail > div {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+}
+
+.runtime-apply-head strong,
+.runtime-apply-meta strong,
+.runtime-cell strong,
+.config-cell strong,
+.task-runtime-detail strong {
+  overflow: hidden;
+  color: #0f172a;
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.runtime-apply-meta {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(96px, 0.7fr);
+  gap: 8px;
+}
+
+.runtime-apply-meta .failure-stage {
+  grid-column: 1 / -1;
+}
+
+.runtime-pipeline {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.runtime-pipeline.compact {
+  width: 204px;
+  grid-template-columns: repeat(6, 28px);
+}
+
+.runtime-stage {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 26px;
+  border: 1px solid #cbd5e1;
+  border-radius: 999px;
+  padding: 0 8px;
+  color: #475569;
+  background: #ffffff;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.runtime-stage-pending {
+  color: #64748b;
+  background: #f1f5f9;
+}
+
+.runtime-stage-running {
+  border-color: #99f6e4;
+  color: #0f766e;
+  background: #ccfbf1;
+}
+
+.runtime-stage-success {
+  border-color: #bbf7d0;
+  color: #047857;
+  background: #dcfce7;
+}
+
+.runtime-stage-failed {
+  border-color: #fecdd3;
+  color: #be123c;
+  background: #ffe4e6;
+}
+
+.failure-stage {
+  width: fit-content;
+  border: 1px solid #fecaca;
+  border-radius: 999px;
+  padding: 5px 8px;
+  color: #be123c;
+  background: #fff1f2;
+  font-size: 12px;
+  font-weight: 900;
 }
 
 .capability-list {
@@ -626,6 +730,36 @@ td span {
   background: #e0f2fe;
 }
 
+.service-pill {
+  width: fit-content;
+  min-width: auto;
+}
+
+.service-ok {
+  color: #047857;
+  background: #d1fae5;
+}
+
+.service-warning {
+  color: #b45309;
+  background: #fef3c7;
+}
+
+.service-danger {
+  color: #be123c;
+  background: #ffe4e6;
+}
+
+.service-muted {
+  color: #64748b;
+  background: #e2e8f0;
+}
+
+.service-info {
+  color: #075985;
+  background: #e0f2fe;
+}
+
 .task-state {
   display: inline-flex;
   align-items: center;
@@ -735,13 +869,13 @@ td span {
 }
 
 .task-item strong,
-.task-item span,
+.task-item span:not(.runtime-stage):not(.task-state),
 .node-item strong,
 .node-item span {
   display: block;
 }
 
-.task-item span,
+.task-item span:not(.runtime-stage):not(.task-state),
 .node-item span,
 .node-item small {
   color: #64748b;
@@ -753,6 +887,19 @@ td span {
   flex: 0 0 auto;
   color: #0f766e;
   font-weight: 900;
+}
+
+.task-runtime-detail {
+  display: grid;
+  grid-template-columns: minmax(104px, 0.5fr) minmax(0, 1fr);
+  gap: 8px;
+}
+
+.task-runtime-detail > div {
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 9px;
+  background: #ffffff;
 }
 
 .progress {
@@ -835,7 +982,7 @@ meter {
 
 table {
   width: 100%;
-  min-width: 1280px;
+  min-width: 1560px;
   border-collapse: collapse;
 }
 
@@ -921,7 +1068,9 @@ td span {
   }
 
   .control-summary,
-  .agent-task-summary {
+  .agent-task-summary,
+  .runtime-apply-meta,
+  .task-runtime-detail {
     grid-template-columns: 1fr;
   }
 

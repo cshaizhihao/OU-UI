@@ -1,4 +1,4 @@
-package server
+﻿package server
 
 import (
 	"crypto/rand"
@@ -70,7 +70,7 @@ type createNodeRequest struct {
 }
 
 func (h Handler) health(c *gin.Context) {
-	c.JSON(http.StatusOK, gin.H{"ok": true, "version": "v0.4.0"})
+	c.JSON(http.StatusOK, gin.H{"ok": true, "version": "v0.5.0"})
 }
 
 func (h Handler) login(c *gin.Context) {
@@ -110,7 +110,7 @@ func (h Handler) overview(c *gin.Context) {
 		"agentsTotal":  int64(len(agents)),
 		"agentsOnline": online,
 		"nodesTotal":   nodes,
-		"version":      "v0.4.0",
+		"version":      "v0.5.0",
 	})
 }
 
@@ -141,6 +141,10 @@ func (h Handler) renderAgentInstallScript(c *gin.Context) string {
 		serverURL = fmt.Sprintf("%s://%s%s", scheme, c.Request.Host, h.cfg.SecurePath)
 	}
 
+	return renderAgentInstallScriptTextCN(serverURL, h.cfg.AgentJoinToken)
+}
+
+func renderAgentInstallScriptTextCN(serverURL, joinToken string) string {
 	return fmt.Sprintf(`#!/usr/bin/env bash
 set -Eeuo pipefail
 
@@ -174,7 +178,7 @@ EOF_ENV
 chmod 600 "$ENV_FILE"
 
 if [[ ! -x "$INSTALL_DIR/ou-ui-agent" ]]; then
-  printf 'v0.4.0 暂未发布预编译 Agent 二进制。\n'
+  printf 'v0.5.0 暂未发布预编译 Agent 二进制。\n'
   printf '请先在源码目录执行：go build -o %%s/ou-ui-agent ./apps/agent\n' "$INSTALL_DIR"
 fi
 
@@ -201,7 +205,7 @@ printf 'Agent 配置已写入。\n'
 printf '启动命令：systemctl enable --now ou-ui-agent\n'
 printf '查看状态：systemctl status ou-ui-agent --no-pager\n'
 printf '查看日志：journalctl -u ou-ui-agent -f\n'
-`, serverURL, h.cfg.AgentJoinToken)
+`, serverURL, joinToken)
 }
 
 func (h Handler) registerAgent(c *gin.Context) {
@@ -332,7 +336,14 @@ func (h Handler) createTask(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "unsupported task type"})
 		return
 	}
-	requiredCapability := requiredCapabilityForTask(req.Type)
+	if req.Payload == nil {
+		req.Payload = map[string]any{}
+	}
+	requiredCapability, err := requiredCapabilityForTask(req.Type, req.Payload)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 	if _, err := h.dispatchableAgent(req.AgentID, requiredCapability); err != nil {
 		status := http.StatusBadRequest
 		if err == gorm.ErrRecordNotFound {
@@ -340,9 +351,6 @@ func (h Handler) createTask(c *gin.Context) {
 		}
 		c.JSON(status, gin.H{"error": err.Error()})
 		return
-	}
-	if req.Payload == nil {
-		req.Payload = map[string]any{}
 	}
 	payload, _ := json.Marshal(req.Payload)
 	task := models.Task{
@@ -451,6 +459,8 @@ func (h Handler) agentUpdateTask(c *gin.Context) {
 		c.JSON(http.StatusConflict, gin.H{"error": "task state changed; update rejected"})
 		return
 	}
+	task.Result = datatypes.JSON(result)
+	task.Logs = req.Logs
 	h.syncNodeStatusForTask(task, req.Status)
 	h.audit("agent", "task.update", task.ID, req.Status)
 	c.JSON(http.StatusOK, gin.H{"ok": true})
@@ -624,6 +634,9 @@ func (h Handler) expireLeases() {
 		}
 		update := h.db.Model(&models.Task{}).Where("id = ? AND status = ?", task.ID, models.TaskStatusRunning).Updates(updates)
 		if update.Error == nil && update.RowsAffected > 0 && task.Attempts >= maxAttempts {
+			result, _ := json.Marshal(map[string]any{"stage": "lease", "error": lastError})
+			task.Result = datatypes.JSON(result)
+			task.Logs = lastError
 			h.syncNodeStatusForTask(task, models.TaskStatusFailed)
 		}
 	}
@@ -639,11 +652,34 @@ func (h Handler) syncNodeStatusForTask(task models.Task, status string) {
 	if err := json.Unmarshal(task.Payload, &payload); err != nil || payload.NodeID == "" {
 		return
 	}
+	var result map[string]any
+	_ = json.Unmarshal(task.Result, &result)
 	nodeStatus := "deployed"
+	updates := map[string]any{
+		"status": nodeStatus,
+	}
+	if value := stringFromResult(result, "configPath"); value != "" {
+		updates["config_path"] = value
+	}
+	if value := stringFromResult(result, "serviceName"); value != "" {
+		updates["service_name"] = value
+	}
+	if value := stringFromResult(result, "serviceStatus"); value != "" {
+		updates["service_status"] = value
+	}
+	if value := stringFromResult(result, "runtimeVersion"); value != "" {
+		updates["runtime_version"] = value
+	}
 	if status == models.TaskStatusFailed {
 		nodeStatus = "failed"
+		updates["status"] = nodeStatus
+		updates["last_error"] = extractResultError(result, task.Logs)
+	} else {
+		now := time.Now()
+		updates["last_deployed_at"] = &now
+		updates["last_error"] = ""
 	}
-	_ = h.db.Model(&models.Node{}).Where("id = ?", payload.NodeID).Update("status", nodeStatus).Error
+	_ = h.db.Model(&models.Node{}).Where("id = ?", payload.NodeID).Updates(updates).Error
 }
 
 func normalizeMaxAttempts(value int) int {
@@ -658,23 +694,52 @@ func normalizeMaxAttempts(value int) int {
 
 const tasksCapabilityPolling = "task-polling"
 
-func requiredCapabilityForTask(taskType string) string {
+func requiredCapabilityForTask(taskType string, payload map[string]any) (string, error) {
 	switch taskType {
 	case models.TaskTypeNoop:
-		return models.TaskTypeNoop
+		return models.TaskTypeNoop, nil
 	case models.TaskTypeRuntimeStatus:
-		return models.TaskTypeRuntimeStatus
+		return models.TaskTypeRuntimeStatus, nil
+	case models.TaskTypeNodeDeploy:
+		spec, err := nodeSpecFromTaskPayload(payload)
+		if err != nil {
+			return "", err
+		}
+		capability := requiredCapabilityForSpec(spec)
+		if capability == "" {
+			return "", fmt.Errorf("unsupported node.deploy runtime %q", spec.Runtime)
+		}
+		return capability, nil
 	default:
-		return ""
+		return "", nil
 	}
+}
+
+func nodeSpecFromTaskPayload(payload map[string]any) (provider.NodeSpec, error) {
+	raw, ok := payload["spec"]
+	if !ok {
+		return provider.NodeSpec{}, fmt.Errorf("node.deploy payload spec is required")
+	}
+	content, err := json.Marshal(raw)
+	if err != nil {
+		return provider.NodeSpec{}, err
+	}
+	var spec provider.NodeSpec
+	if err := json.Unmarshal(content, &spec); err != nil {
+		return provider.NodeSpec{}, err
+	}
+	if spec.Runtime == "" {
+		return provider.NodeSpec{}, fmt.Errorf("node.deploy spec runtime is required")
+	}
+	return spec, nil
 }
 
 func requiredCapabilityForSpec(spec provider.NodeSpec) string {
 	switch spec.Runtime {
 	case provider.RuntimeXray:
-		return "xray.render"
+		return "xray.deploy"
 	case provider.RuntimeHysteria2:
-		return "hysteria2.render"
+		return "hysteria2.deploy"
 	default:
 		return ""
 	}
@@ -754,16 +819,36 @@ func extractResultError(result map[string]any, logs string) string {
 	return strings.TrimSpace(logs)
 }
 
+func stringFromResult(result map[string]any, key string) string {
+	if result == nil {
+		return ""
+	}
+	value, ok := result[key]
+	if !ok {
+		return ""
+	}
+	return strings.TrimSpace(fmt.Sprint(value))
+}
+
 func (h Handler) audit(actor, action, target, detail string) {
 	_ = h.db.Create(&models.AuditLog{Actor: actor, Action: action, Target: target, Detail: detail}).Error
 }
 
 func randomHex(n int) string {
-	buf := make([]byte, n)
-	if _, err := rand.Read(buf); err != nil {
-		return hex.EncodeToString([]byte(time.Now().Format("150405.000000000")))[:n]
+	if n <= 0 {
+		return ""
 	}
-	return hex.EncodeToString(buf)
+	buf := make([]byte, n)
+	if _, err := rand.Read(buf); err == nil {
+		return hex.EncodeToString(buf)
+	}
+	seed := sha256.Sum256([]byte(time.Now().UTC().Format(time.RFC3339Nano)))
+	text := hex.EncodeToString(seed[:])
+	for len(text) < n*2 {
+		next := sha256.Sum256([]byte(text))
+		text += hex.EncodeToString(next[:])
+	}
+	return text[:n*2]
 }
 
 func hashSecret(value string) string {
@@ -801,3 +886,5 @@ func normalizeProtocol(value string) string {
 		return ""
 	}
 }
+
+

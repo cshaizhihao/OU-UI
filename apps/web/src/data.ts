@@ -2,6 +2,57 @@ export type AgentStatus = "online" | "degraded" | "offline";
 
 export type Runtime = "Xray" | "Hysteria2";
 
+export type RuntimeApplyStage =
+  | "render"
+  | "install"
+  | "apply"
+  | "reload"
+  | "health"
+  | "rollback";
+export type RuntimeServiceStatus =
+  | "running"
+  | "reloading"
+  | "degraded"
+  | "stopped"
+  | "maintenance"
+  | string;
+
+export type RuntimeApplyPhase = {
+  stage?: RuntimeApplyStage | string;
+  name?: RuntimeApplyStage | string;
+  phase?: RuntimeApplyStage | string;
+  status?: ControlTaskStatus | LegacyTaskStatus | string;
+  state?: ControlTaskStatus | LegacyTaskStatus | string;
+};
+
+export type RuntimeApplySnapshot = {
+  stage?: RuntimeApplyStage | string;
+  applyStage?: RuntimeApplyStage | string;
+  apply_stage?: RuntimeApplyStage | string;
+  currentStage?: RuntimeApplyStage | string;
+  current_stage?: RuntimeApplyStage | string;
+  failureStage?: RuntimeApplyStage | string;
+  failure_stage?: RuntimeApplyStage | string;
+  failedStage?: RuntimeApplyStage | string;
+  failed_stage?: RuntimeApplyStage | string;
+  runtimeVersion?: string;
+  runtime_version?: string;
+  version?: string;
+  serviceStatus?: RuntimeServiceStatus;
+  service_status?: RuntimeServiceStatus;
+  service?: RuntimeServiceStatus;
+  configPath?: string;
+  config_path?: string;
+  path?: string;
+  rollbackAvailable?: boolean | string | number;
+  rollback_available?: boolean | string | number;
+  canRollback?: boolean | string | number;
+  can_rollback?: boolean | string | number;
+  phases?: RuntimeApplyPhase[];
+  stages?: RuntimeApplyPhase[];
+  steps?: RuntimeApplyPhase[];
+};
+
 export type RuntimeRef =
   | Runtime
   | string
@@ -11,6 +62,18 @@ export type RuntimeRef =
       capabilities?: string[];
       runtimeCapabilities?: string[];
       runtime_capabilities?: string[];
+      version?: string;
+      runtimeVersion?: string;
+      runtime_version?: string;
+      serviceStatus?: RuntimeServiceStatus;
+      service_status?: RuntimeServiceStatus;
+      configPath?: string;
+      config_path?: string;
+      rollbackAvailable?: boolean | string | number;
+      rollback_available?: boolean | string | number;
+      apply?: RuntimeApplySnapshot;
+      runtimeApply?: RuntimeApplySnapshot;
+      runtime_apply?: RuntimeApplySnapshot;
     };
 
 export type Protocol = "VLESS Reality" | "VMess" | "Trojan" | "Shadowsocks" | "Hysteria2";
@@ -22,6 +85,15 @@ export type AgentControlTask = {
   id?: string;
   status?: ControlTaskStatus | LegacyTaskStatus | string;
   state?: ControlTaskStatus | LegacyTaskStatus | string;
+  stage?: RuntimeApplyStage | string;
+  applyStage?: RuntimeApplyStage | string;
+  apply_stage?: RuntimeApplyStage | string;
+  currentStage?: RuntimeApplyStage | string;
+  current_stage?: RuntimeApplyStage | string;
+  failureStage?: RuntimeApplyStage | string;
+  failure_stage?: RuntimeApplyStage | string;
+  failedStage?: RuntimeApplyStage | string;
+  failed_stage?: RuntimeApplyStage | string;
   failureReason?: string;
   failure_reason?: string;
   error?: string;
@@ -79,6 +151,25 @@ export type Agent = {
   task?: AgentControlTask;
   taskStatus?: ControlTaskStatus | LegacyTaskStatus | string;
   task_status?: ControlTaskStatus | LegacyTaskStatus | string;
+  runtimeVersion?: string;
+  runtime_version?: string;
+  serviceStatus?: RuntimeServiceStatus;
+  service_status?: RuntimeServiceStatus;
+  configPath?: string;
+  config_path?: string;
+  rollbackAvailable?: boolean | string | number;
+  rollback_available?: boolean | string | number;
+  applyStage?: RuntimeApplyStage | string;
+  apply_stage?: RuntimeApplyStage | string;
+  currentStage?: RuntimeApplyStage | string;
+  current_stage?: RuntimeApplyStage | string;
+  failureStage?: RuntimeApplyStage | string;
+  failure_stage?: RuntimeApplyStage | string;
+  failedStage?: RuntimeApplyStage | string;
+  failed_stage?: RuntimeApplyStage | string;
+  runtimeApply?: RuntimeApplySnapshot;
+  runtime_apply?: RuntimeApplySnapshot;
+  apply?: RuntimeApplySnapshot;
   failureReason?: string;
   failure_reason?: string;
   retryCount?: number;
@@ -95,6 +186,26 @@ export type DeployTask = {
   action: string;
   status?: ControlTaskStatus | LegacyTaskStatus | string;
   state?: ControlTaskStatus | LegacyTaskStatus | string;
+  stage?: RuntimeApplyStage | string;
+  applyStage?: RuntimeApplyStage | string;
+  apply_stage?: RuntimeApplyStage | string;
+  currentStage?: RuntimeApplyStage | string;
+  current_stage?: RuntimeApplyStage | string;
+  failureStage?: RuntimeApplyStage | string;
+  failure_stage?: RuntimeApplyStage | string;
+  failedStage?: RuntimeApplyStage | string;
+  failed_stage?: RuntimeApplyStage | string;
+  runtimeVersion?: string;
+  runtime_version?: string;
+  serviceStatus?: RuntimeServiceStatus;
+  service_status?: RuntimeServiceStatus;
+  configPath?: string;
+  config_path?: string;
+  rollbackAvailable?: boolean | string | number;
+  rollback_available?: boolean | string | number;
+  runtimeApply?: RuntimeApplySnapshot;
+  runtime_apply?: RuntimeApplySnapshot;
+  apply?: RuntimeApplySnapshot;
   progress?: number;
   eta?: string;
   failureReason?: string;
@@ -128,8 +239,28 @@ export const agents: Agent[] = [
     authStatus: "authenticated",
     lastHeartbeat: "18s ago",
     runtimeCapabilities: ["hot reload", "reality keys", "config dry-run"],
+    runtimeVersion: "Xray 1.8.24",
+    serviceStatus: "reloading",
+    configPath: "/etc/ou/runtime/xray-hkg-01.json",
+    rollbackAvailable: true,
+    runtimeApply: {
+      currentStage: "reload",
+      runtimeVersion: "Xray 1.8.24",
+      serviceStatus: "reloading",
+      configPath: "/etc/ou/runtime/xray-hkg-01.json",
+      rollbackAvailable: true,
+      phases: [
+        { stage: "render", status: "success" },
+        { stage: "install", status: "success" },
+        { stage: "apply", status: "success" },
+        { stage: "reload", status: "running" },
+        { stage: "health", status: "pending" },
+        { stage: "rollback", status: "pending" }
+      ]
+    },
     controlTask: {
       status: "running",
+      currentStage: "reload",
       retryCount: 0
     }
   },
@@ -152,8 +283,28 @@ export const agents: Agent[] = [
     authStatus: "authenticated",
     lastHeartbeat: "42s ago",
     runtimeCapabilities: ["port hopping", "udp relay", "bandwidth policy"],
+    runtimeVersion: "Hysteria2 2.6.1",
+    serviceStatus: "running",
+    configPath: "/etc/ou/runtime/hysteria2-sin-02.yaml",
+    rollbackAvailable: true,
+    runtimeApply: {
+      currentStage: "render",
+      runtimeVersion: "Hysteria2 2.6.1",
+      serviceStatus: "running",
+      configPath: "/etc/ou/runtime/hysteria2-sin-02.yaml",
+      rollbackAvailable: true,
+      phases: [
+        { stage: "render", status: "running" },
+        { stage: "install", status: "pending" },
+        { stage: "apply", status: "pending" },
+        { stage: "reload", status: "pending" },
+        { stage: "health", status: "pending" },
+        { stage: "rollback", status: "pending" }
+      ]
+    },
     controlTask: {
       status: "pending",
+      currentStage: "render",
       retryCount: 1
     }
   },
@@ -176,8 +327,30 @@ export const agents: Agent[] = [
     authStatus: "expired",
     lastHeartbeat: "2m ago",
     runtimeCapabilities: ["certificate sync", "tls fingerprint", "inbound patch"],
+    runtimeVersion: "Xray 1.8.23",
+    serviceStatus: "degraded",
+    configPath: "/etc/ou/runtime/xray-tyo-03.json",
+    rollbackAvailable: true,
+    failureStage: "health",
+    runtimeApply: {
+      currentStage: "health",
+      failureStage: "health",
+      runtimeVersion: "Xray 1.8.23",
+      serviceStatus: "degraded",
+      configPath: "/etc/ou/runtime/xray-tyo-03.json",
+      rollbackAvailable: true,
+      phases: [
+        { stage: "render", status: "success" },
+        { stage: "install", status: "success" },
+        { stage: "apply", status: "success" },
+        { stage: "reload", status: "success" },
+        { stage: "health", status: "failed" },
+        { stage: "rollback", status: "pending" }
+      ]
+    },
     controlTask: {
       status: "failed",
+      failedStage: "health",
       failureReason: "Certificate chain precheck failed",
       retryCount: 2
     }
@@ -201,8 +374,28 @@ export const agents: Agent[] = [
     authStatus: "unauthenticated",
     lastHeartbeat: "maintenance window",
     runtimeCapabilities: [],
+    runtimeVersion: "Hysteria2 2.5.2",
+    serviceStatus: "maintenance",
+    configPath: "/etc/ou/runtime/hysteria2-lax-04.yaml",
+    rollbackAvailable: false,
+    runtimeApply: {
+      currentStage: "rollback",
+      runtimeVersion: "Hysteria2 2.5.2",
+      serviceStatus: "maintenance",
+      configPath: "/etc/ou/runtime/hysteria2-lax-04.yaml",
+      rollbackAvailable: false,
+      phases: [
+        { stage: "render", status: "success" },
+        { stage: "install", status: "success" },
+        { stage: "apply", status: "success" },
+        { stage: "reload", status: "success" },
+        { stage: "health", status: "success" },
+        { stage: "rollback", status: "success" }
+      ]
+    },
     controlTask: {
       status: "success",
+      currentStage: "rollback",
       retryCount: 0
     }
   }
@@ -227,6 +420,11 @@ export const taskQueue: DeployTask[] = [
     protocol: "VLESS Reality",
     action: "Generate inbound and Reality shortId",
     state: "running",
+    currentStage: "reload",
+    runtimeVersion: "Xray 1.8.24",
+    serviceStatus: "reloading",
+    configPath: "/etc/ou/runtime/xray-hkg-01.json",
+    rollbackAvailable: true,
     progress: 72,
     eta: "1m 20s",
     retryCount: 0
@@ -239,6 +437,11 @@ export const taskQueue: DeployTask[] = [
     protocol: "Hysteria2",
     action: "Refresh port-hopping policy",
     state: "pending",
+    currentStage: "render",
+    runtimeVersion: "Hysteria2 2.6.1",
+    serviceStatus: "running",
+    configPath: "/etc/ou/runtime/hysteria2-sin-02.yaml",
+    rollbackAvailable: true,
     progress: 18,
     eta: "3m 45s",
     retryCount: 1
@@ -251,6 +454,11 @@ export const taskQueue: DeployTask[] = [
     protocol: "Trojan",
     action: "Roll out certificate chain",
     state: "success",
+    currentStage: "health",
+    runtimeVersion: "Xray 1.8.23",
+    serviceStatus: "running",
+    configPath: "/etc/ou/runtime/xray-tyo-03.json",
+    rollbackAvailable: true,
     progress: 100,
     eta: "done",
     retryCount: 0
@@ -263,6 +471,12 @@ export const taskQueue: DeployTask[] = [
     protocol: "Trojan",
     action: "Apply certificate chain",
     state: "failed",
+    currentStage: "health",
+    failedStage: "health",
+    runtimeVersion: "Xray 1.8.23",
+    serviceStatus: "degraded",
+    configPath: "/etc/ou/runtime/xray-tyo-03.json",
+    rollbackAvailable: true,
     progress: 100,
     eta: "retry scheduled",
     failureReason: "Certificate chain precheck failed",

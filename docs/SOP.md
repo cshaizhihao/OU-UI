@@ -1,6 +1,6 @@
 # OU-UI SOP
 
-版本：`v0.4.0`
+版本：`v0.5.0`
 
 仓库：<https://github.com/cshaizhihao/OU-UI>
 
@@ -44,7 +44,7 @@ bash scripts/install.sh
 bash scripts/install-agent.sh "https://panel.example.com/安全路径" "Agent注册Token"
 ```
 
-v0.4.0 的 Agent 安装脚本会写入 `/etc/ou-ui/agent.env`，创建 systemd 服务，并把运行状态、日志命令回显给用户。Agent 进程会把本机身份保存到数据目录，避免重启后重复注册。
+v0.5.0 的 Agent 安装脚本会写入 `/etc/ou-ui/agent.env`，创建 systemd 服务，并把运行状态、日志命令回显给用户。Agent 进程会把本机身份保存到数据目录，避免重启后重复注册。
 
 ## 4. 任务控制链路
 
@@ -56,7 +56,20 @@ v0.4.0 起，Server 和 Agent 对任务执行采用以下约定：
 4. 超过租约的任务会被重新排队；超过最大尝试次数后标记为 `failed`。
 5. 终态任务不可被旧 Agent 回包覆盖。
 
-## 5. CI
+## 5. Runtime Deploy
+
+v0.5.0 起，`node.deploy` 任务在 Agent 本机执行以下阶段：
+
+1. `render`：由 Provider 渲染 Xray JSON 或 Hysteria2 YAML。
+2. `install`：检查目标 runtime 二进制是否存在，不存在则失败。
+3. `apply`：写入 active config，并在旧配置存在时生成备份。
+4. `reload`：通过 systemd reload/restart 目标 runtime 服务。
+5. `health`：采集 runtime version、service status；systemd 返回非 `active` 时判定失败，Xray 额外执行 TCP 端口健康检查。
+6. `rollback`：apply/reload/health 失败时尽量恢复上一版配置；首次部署无备份时移除新写入的配置。
+
+当前 v0.5.0 不会自动安装 Xray/Hysteria2 二进制，也不会自动接管 runtime 的 systemd unit。目标机器需要先准备 runtime 和 systemd 服务，并确保该服务配置会加载 OU-UI 写入的数据目录；后续版本会补齐自动安装器和 unit 生成器。
+
+## 6. CI
 
 GitHub Actions 工作流位于 `.github/workflows/ci.yml`，覆盖：
 
@@ -69,7 +82,7 @@ GitHub Actions 工作流位于 `.github/workflows/ci.yml`，覆盖：
 
 CI 不需要真实业务 token。不要新增项目级真实凭据。
 
-## 6. 升级
+## 7. 升级
 
 1. 备份安装目录中的 `.env` 与 `data/`。
 2. 拉取新版本代码。

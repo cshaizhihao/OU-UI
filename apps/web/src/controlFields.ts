@@ -2,6 +2,8 @@ import type {
   Agent,
   ControlTaskStatus,
   DeployTask,
+  RuntimeApplySnapshot,
+  RuntimeApplyStage,
   RuntimeRef
 } from "./data";
 
@@ -17,6 +19,39 @@ export type ControlTaskView = {
   status: ControlTaskStatus;
   failureReason?: string;
   retryCount: number;
+};
+
+export type RuntimeApplyPhaseView = {
+  stage: RuntimeApplyStage;
+  status: ControlTaskStatus;
+};
+
+export type RuntimeApplyView = {
+  currentStage: RuntimeApplyStage;
+  runtimeVersion: string;
+  serviceStatus: string;
+  configPath: string;
+  rollbackAvailable: boolean;
+  failureStage?: RuntimeApplyStage;
+  phases: RuntimeApplyPhaseView[];
+};
+
+export const runtimeApplyStages: RuntimeApplyStage[] = [
+  "render",
+  "install",
+  "apply",
+  "reload",
+  "health",
+  "rollback"
+];
+
+export const runtimeApplyStageLabel: Record<RuntimeApplyStage, string> = {
+  render: "Render",
+  install: "Install",
+  apply: "Apply",
+  reload: "Reload",
+  health: "Health",
+  rollback: "Rollback"
 };
 
 const taskStatusMap: Record<string, ControlTaskStatus> = {
@@ -40,6 +75,34 @@ const taskStatusMap: Record<string, ControlTaskStatus> = {
   succeeded: "success",
   timeout: "failed",
   waiting: "pending"
+};
+
+const runtimeApplyStageMap: Record<string, RuntimeApplyStage> = {
+  apply: "apply",
+  apply_config: "apply",
+  applyconfig: "apply",
+  config: "apply",
+  configure: "apply",
+  health: "health",
+  health_check: "health",
+  healthcheck: "health",
+  install: "install",
+  install_runtime: "install",
+  installruntime: "install",
+  precheck: "install",
+  runtime_install: "install",
+  runtimeinstall: "install",
+  probe: "health",
+  probes: "health",
+  reload: "reload",
+  reload_runtime: "reload",
+  reloadruntime: "reload",
+  render: "render",
+  render_config: "render",
+  renderconfig: "render",
+  rollback: "rollback",
+  roll_back: "rollback",
+  revert: "rollback"
 };
 
 export function getRegistrationState(agent: Agent): ControlBadgeState {
@@ -149,6 +212,204 @@ export function getRuntimeCapabilities(agent: Agent): string[] {
   }
 
   return [];
+}
+
+export function getAgentRuntimeApply(agent: Agent): RuntimeApplyView {
+  const runtime = isRecord(agent.runtime) ? agent.runtime : undefined;
+  const task = pickRecord(
+    agent.controlTask,
+    agent.control_task,
+    agent.currentTask,
+    agent.current_task,
+    agent.task
+  );
+  const apply = pickRuntimeApplySnapshot(
+    agent.runtimeApply,
+    agent.runtime_apply,
+    agent.apply,
+    readField(runtime, "runtimeApply"),
+    readField(runtime, "runtime_apply"),
+    readField(runtime, "apply")
+  );
+  const status = normalizeTaskStatus(
+    pickFirst(
+      readField(task, "status"),
+      readField(task, "state"),
+      agent.taskStatus,
+      agent.task_status
+    )
+  );
+  const currentStage = normalizeApplyStage(
+    pickFirst(
+      readField(apply, "currentStage"),
+      readField(apply, "current_stage"),
+      readField(apply, "applyStage"),
+      readField(apply, "apply_stage"),
+      readField(apply, "stage"),
+      readField(task, "currentStage"),
+      readField(task, "current_stage"),
+      readField(task, "applyStage"),
+      readField(task, "apply_stage"),
+      readField(task, "stage"),
+      agent.currentStage,
+      agent.current_stage,
+      agent.applyStage,
+      agent.apply_stage
+    ),
+    inferStageFromStatus(status)
+  );
+  const failureStage = normalizeOptionalApplyStage(
+    pickFirst(
+      readField(apply, "failureStage"),
+      readField(apply, "failure_stage"),
+      readField(apply, "failedStage"),
+      readField(apply, "failed_stage"),
+      readField(task, "failureStage"),
+      readField(task, "failure_stage"),
+      readField(task, "failedStage"),
+      readField(task, "failed_stage"),
+      agent.failureStage,
+      agent.failure_stage,
+      agent.failedStage,
+      agent.failed_stage
+    )
+  );
+
+  return {
+    currentStage,
+    runtimeVersion:
+      pickString(
+        readField(apply, "runtimeVersion"),
+        readField(apply, "runtime_version"),
+        readField(apply, "version"),
+        agent.runtimeVersion,
+        agent.runtime_version,
+        readField(runtime, "runtimeVersion"),
+        readField(runtime, "runtime_version"),
+        readField(runtime, "version")
+      ) ?? "Version unknown",
+    serviceStatus:
+      pickString(
+        readField(apply, "serviceStatus"),
+        readField(apply, "service_status"),
+        readField(apply, "service"),
+        agent.serviceStatus,
+        agent.service_status,
+        readField(runtime, "serviceStatus"),
+        readField(runtime, "service_status")
+      ) ?? "unknown",
+    configPath:
+      pickString(
+        readField(apply, "configPath"),
+        readField(apply, "config_path"),
+        readField(apply, "path"),
+        agent.configPath,
+        agent.config_path,
+        readField(runtime, "configPath"),
+        readField(runtime, "config_path")
+      ) ?? "Not reported",
+    rollbackAvailable:
+      pickBoolean(
+        readField(apply, "rollbackAvailable"),
+        readField(apply, "rollback_available"),
+        readField(apply, "canRollback"),
+        readField(apply, "can_rollback"),
+        agent.rollbackAvailable,
+        agent.rollback_available,
+        readField(runtime, "rollbackAvailable"),
+        readField(runtime, "rollback_available")
+      ) ?? false,
+    failureStage,
+    phases: getRuntimeApplyPhases(apply, currentStage, status, failureStage)
+  };
+}
+
+export function getDeployRuntimeApply(task: DeployTask): RuntimeApplyView {
+  const runtime = isRecord(task.runtime) ? task.runtime : undefined;
+  const apply = pickRuntimeApplySnapshot(
+    task.runtimeApply,
+    task.runtime_apply,
+    task.apply,
+    readField(runtime, "runtimeApply"),
+    readField(runtime, "runtime_apply"),
+    readField(runtime, "apply")
+  );
+  const status = normalizeTaskStatus(pickFirst(task.status, task.state));
+  const currentStage = normalizeApplyStage(
+    pickFirst(
+      readField(apply, "currentStage"),
+      readField(apply, "current_stage"),
+      readField(apply, "applyStage"),
+      readField(apply, "apply_stage"),
+      readField(apply, "stage"),
+      task.currentStage,
+      task.current_stage,
+      task.applyStage,
+      task.apply_stage,
+      task.stage
+    ),
+    inferStageFromStatus(status)
+  );
+  const failureStage = normalizeOptionalApplyStage(
+    pickFirst(
+      readField(apply, "failureStage"),
+      readField(apply, "failure_stage"),
+      readField(apply, "failedStage"),
+      readField(apply, "failed_stage"),
+      task.failureStage,
+      task.failure_stage,
+      task.failedStage,
+      task.failed_stage
+    )
+  );
+
+  return {
+    currentStage,
+    runtimeVersion:
+      pickString(
+        readField(apply, "runtimeVersion"),
+        readField(apply, "runtime_version"),
+        readField(apply, "version"),
+        task.runtimeVersion,
+        task.runtime_version,
+        readField(runtime, "runtimeVersion"),
+        readField(runtime, "runtime_version"),
+        readField(runtime, "version")
+      ) ?? "Version unknown",
+    serviceStatus:
+      pickString(
+        readField(apply, "serviceStatus"),
+        readField(apply, "service_status"),
+        readField(apply, "service"),
+        task.serviceStatus,
+        task.service_status,
+        readField(runtime, "serviceStatus"),
+        readField(runtime, "service_status")
+      ) ?? "unknown",
+    configPath:
+      pickString(
+        readField(apply, "configPath"),
+        readField(apply, "config_path"),
+        readField(apply, "path"),
+        task.configPath,
+        task.config_path,
+        readField(runtime, "configPath"),
+        readField(runtime, "config_path")
+      ) ?? "Not reported",
+    rollbackAvailable:
+      pickBoolean(
+        readField(apply, "rollbackAvailable"),
+        readField(apply, "rollback_available"),
+        readField(apply, "canRollback"),
+        readField(apply, "can_rollback"),
+        task.rollbackAvailable,
+        task.rollback_available,
+        readField(runtime, "rollbackAvailable"),
+        readField(runtime, "rollback_available")
+      ) ?? false,
+    failureStage,
+    phases: getRuntimeApplyPhases(apply, currentStage, status, failureStage)
+  };
 }
 
 export function getAgentTaskState(agent: Agent): ControlTaskView {
@@ -294,6 +555,10 @@ function pickRecord(...values: unknown[]): Record<string, unknown> | undefined {
   return isRecord(value) ? value : undefined;
 }
 
+function pickRuntimeApplySnapshot(...values: unknown[]): RuntimeApplySnapshot | undefined {
+  return pickRecord(...values) as RuntimeApplySnapshot | undefined;
+}
+
 function readField(value: unknown, key: string): unknown {
   return isRecord(value) ? value[key] : undefined;
 }
@@ -318,6 +583,133 @@ function toStringList(value: unknown): string[] {
     .split(/[,|]/)
     .map((item) => item.trim())
     .filter(Boolean);
+}
+
+function getRuntimeApplyPhases(
+  apply: RuntimeApplySnapshot | undefined,
+  currentStage: RuntimeApplyStage,
+  status: ControlTaskStatus,
+  failureStage: RuntimeApplyStage | undefined
+): RuntimeApplyPhaseView[] {
+  const explicitPhases = firstList(
+    readField(apply, "phases"),
+    readField(apply, "stages"),
+    readField(apply, "steps")
+  );
+
+  if (explicitPhases) {
+    const normalized = explicitPhases
+      .map((phase) => {
+        const stage = normalizeOptionalApplyStage(
+          pickFirst(
+            readField(phase, "stage"),
+            readField(phase, "name"),
+            readField(phase, "phase")
+          )
+        );
+
+        if (!stage) {
+          return undefined;
+        }
+
+        return {
+          stage,
+          status: normalizeTaskStatus(
+            pickFirst(readField(phase, "status"), readField(phase, "state"))
+          )
+        };
+      })
+      .filter((phase): phase is RuntimeApplyPhaseView => Boolean(phase));
+
+    if (normalized.length > 0) {
+      return runtimeApplyStages.map((stage) => {
+        const explicit = normalized.find((phase) => phase.stage === stage);
+        return (
+          explicit ?? {
+            stage,
+            status: inferStageStatus(stage, currentStage, status, failureStage)
+          }
+        );
+      });
+    }
+  }
+
+  return runtimeApplyStages.map((stage) => ({
+    stage,
+    status: inferStageStatus(stage, currentStage, status, failureStage)
+  }));
+}
+
+function firstList(...values: unknown[]): unknown[] | undefined {
+  for (const value of values) {
+    if (Array.isArray(value)) {
+      return value;
+    }
+  }
+
+  return undefined;
+}
+
+function normalizeApplyStage(value: unknown, fallback: RuntimeApplyStage): RuntimeApplyStage {
+  return normalizeOptionalApplyStage(value) ?? fallback;
+}
+
+function normalizeOptionalApplyStage(value: unknown): RuntimeApplyStage | undefined {
+  const raw = pickString(value)
+    ?.toLowerCase()
+    .replace(/[\s-]+/g, "_");
+
+  if (!raw) {
+    return undefined;
+  }
+
+  return runtimeApplyStageMap[raw] ?? undefined;
+}
+
+function inferStageFromStatus(status: ControlTaskStatus): RuntimeApplyStage {
+  if (status === "success" || status === "failed") {
+    return "health";
+  }
+  if (status === "running") {
+    return "apply";
+  }
+  return "render";
+}
+
+function inferStageStatus(
+  stage: RuntimeApplyStage,
+  currentStage: RuntimeApplyStage,
+  status: ControlTaskStatus,
+  failureStage: RuntimeApplyStage | undefined
+): ControlTaskStatus {
+  if (failureStage === stage) {
+    return "failed";
+  }
+
+  const currentIndex = runtimeApplyStages.indexOf(currentStage);
+  const stageIndex = runtimeApplyStages.indexOf(stage);
+
+  if (status === "success") {
+    return stageIndex <= currentIndex ? "success" : "pending";
+  }
+
+  if (status === "failed") {
+    if (stageIndex < currentIndex) {
+      return "success";
+    }
+
+    return stageIndex === currentIndex ? "failed" : "pending";
+  }
+
+  if (status === "running") {
+    if (stageIndex < currentIndex) {
+      return "success";
+    }
+
+    return stageIndex === currentIndex ? "running" : "pending";
+  }
+
+  return stageIndex < currentIndex ? "success" : "pending";
 }
 
 function formatToken(value: string): string {

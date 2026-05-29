@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -130,9 +131,9 @@ func enroll(client *http.Client, serverURL, joinToken, agentName string, state a
 	reg, err := register(client, serverURL, joinToken, registerRequest{
 		InstallID:    state.InstallID,
 		Name:         agentName,
-		Version:      "v0.4.0",
+		Version:      "v0.5.0",
 		System:       agentruntime.CollectSystemInfo(),
-		Capabilities: []string{"monitoring", tasks.CapabilityTaskPolling, "noop", "runtime.status", "xray.render", "hysteria2.render"},
+		Capabilities: []string{"monitoring", tasks.CapabilityTaskPolling, "noop", "runtime.status", "xray.render", "xray.deploy", "hysteria2.render", "hysteria2.deploy"},
 	})
 	if err != nil {
 		return state, err
@@ -294,11 +295,20 @@ func isUnauthorized(err error) bool {
 }
 
 func randomHex(n int) string {
-	buf := make([]byte, n)
-	if _, err := rand.Read(buf); err != nil {
-		return hex.EncodeToString([]byte(time.Now().Format("150405.000000000")))[:n]
+	if n <= 0 {
+		return ""
 	}
-	return hex.EncodeToString(buf)
+	buf := make([]byte, n)
+	if _, err := rand.Read(buf); err == nil {
+		return hex.EncodeToString(buf)
+	}
+	seed := sha256.Sum256([]byte(time.Now().UTC().Format(time.RFC3339Nano)))
+	text := hex.EncodeToString(seed[:])
+	for len(text) < n*2 {
+		next := sha256.Sum256([]byte(text))
+		text += hex.EncodeToString(next[:])
+	}
+	return text[:n*2]
 }
 
 func getenv(key, fallback string) string {

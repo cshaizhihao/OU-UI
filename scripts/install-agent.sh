@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-VERSION="v0.4.0"
+VERSION="v0.5.0"
 SERVICE_NAME="ou-ui-agent"
 ENV_DIR="/etc/ou-ui"
 ENV_FILE="$ENV_DIR/agent.env"
@@ -9,7 +9,7 @@ SERVICE_FILE="/etc/systemd/system/$SERVICE_NAME.service"
 
 DEFAULT_INSTALL_DIR="/opt/ou-ui-agent"
 DEFAULT_DATA_DIR="/var/lib/ou-ui-agent"
-DEFAULT_DOCKER_IMAGE="ou-ui-agent:0.4.0"
+DEFAULT_DOCKER_IMAGE="ou-ui-agent:0.5.0"
 DEFAULT_CONTAINER_NAME="ou-ui-agent"
 
 DEFAULT_HOSTNAME="$(hostname 2>/dev/null || true)"
@@ -274,7 +274,7 @@ case "${OUUI_AGENT_RUN_MODE:-binary}" in
     exec "$binary_path" ${OUUI_AGENT_EXTRA_ARGS:-}
     ;;
   docker)
-    image="${OUUI_AGENT_DOCKER_IMAGE:-ou-ui-agent:0.4.0}"
+    image="${OUUI_AGENT_DOCKER_IMAGE:-ou-ui-agent:0.5.0}"
     container_name="${OUUI_AGENT_CONTAINER_NAME:-ou-ui-agent}"
     data_dir="${OUUI_AGENT_DATA_DIR:-/var/lib/ou-ui-agent}"
     if ! command -v docker >/dev/null 2>&1; then
@@ -435,7 +435,7 @@ print_next_steps() {
   if [[ "$RUN_MODE" == "binary" && ! -x "$BINARY_PATH" ]]; then
     printf '\n'
     warn "尚未找到可执行 Agent 二进制：$BINARY_PATH"
-    warn "请先将 v0.4.0 Agent 二进制放到该路径并 chmod +x，再执行启动命令。"
+    warn "请先将 v0.5.0 Agent 二进制放到该路径并 chmod +x，再执行启动命令。"
   fi
 
   if [[ "$RUN_MODE" == "docker" ]] && ! command -v docker >/dev/null 2>&1; then

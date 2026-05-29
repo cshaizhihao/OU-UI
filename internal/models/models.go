@@ -87,34 +87,40 @@ type Agent struct {
 }
 
 type Task struct {
-	ID         string         `gorm:"primaryKey" json:"id"`
-	AgentID    string         `gorm:"index:idx_tasks_agent_status_created" json:"agentId"`
-	Type       string         `json:"type"`
-	Status     string         `gorm:"index:idx_tasks_agent_status_created" json:"status"`
-	Payload    datatypes.JSON `json:"payload"`
-	Result     datatypes.JSON `json:"result"`
-	Logs       string         `json:"logs"`
-	Attempts   int            `json:"attempts"`
-	MaxAttempts int            `json:"maxAttempts"`
-	LastError  string         `json:"lastError"`
-	StartedAt  *time.Time     `json:"startedAt"`
+	ID             string         `gorm:"primaryKey" json:"id"`
+	AgentID        string         `gorm:"index:idx_tasks_agent_status_created" json:"agentId"`
+	Type           string         `json:"type"`
+	Status         string         `gorm:"index:idx_tasks_agent_status_created" json:"status"`
+	Payload        datatypes.JSON `json:"payload"`
+	Result         datatypes.JSON `json:"result"`
+	Logs           string         `json:"logs"`
+	Attempts       int            `json:"attempts"`
+	MaxAttempts    int            `json:"maxAttempts"`
+	LastError      string         `json:"lastError"`
+	StartedAt      *time.Time     `json:"startedAt"`
 	LeaseExpiresAt *time.Time  `json:"leaseExpiresAt"`
-	FinishedAt *time.Time     `json:"finishedAt"`
-	CreatedAt  time.Time      `gorm:"index:idx_tasks_agent_status_created" json:"createdAt"`
-	UpdatedAt  time.Time      `json:"updatedAt"`
+	FinishedAt     *time.Time     `json:"finishedAt"`
+	CreatedAt      time.Time      `gorm:"index:idx_tasks_agent_status_created" json:"createdAt"`
+	UpdatedAt      time.Time      `json:"updatedAt"`
 }
 
 type Node struct {
-	ID        string         `gorm:"primaryKey" json:"id"`
-	AgentID   string         `json:"agentId"`
-	Name      string         `json:"name"`
-	Runtime   string         `json:"runtime"`
-	Protocol  string         `json:"protocol"`
-	Status    string         `json:"status"`
-	Spec      datatypes.JSON `json:"spec"`
-	LastTaskID string         `json:"lastTaskId"`
-	CreatedAt time.Time      `json:"createdAt"`
-	UpdatedAt time.Time      `json:"updatedAt"`
+	ID             string         `gorm:"primaryKey" json:"id"`
+	AgentID        string         `json:"agentId"`
+	Name           string         `json:"name"`
+	Runtime        string         `json:"runtime"`
+	Protocol       string         `json:"protocol"`
+	Status         string         `json:"status"`
+	Spec           datatypes.JSON `json:"spec"`
+	LastTaskID     string         `json:"lastTaskId"`
+	RuntimeVersion string         `json:"runtimeVersion"`
+	ServiceName    string         `json:"serviceName"`
+	ServiceStatus  string         `json:"serviceStatus"`
+	ConfigPath     string         `json:"configPath"`
+	LastError      string         `json:"lastError"`
+	LastDeployedAt *time.Time `json:"lastDeployedAt"`
+	CreatedAt      time.Time  `json:"createdAt"`
+	UpdatedAt      time.Time  `json:"updatedAt"`
 }
 
 type AuditLog struct {

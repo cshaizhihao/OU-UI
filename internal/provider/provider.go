@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 )
 
 type Runtime string
@@ -28,6 +29,84 @@ type Provider interface {
 	Render(spec NodeSpec) ([]byte, error)
 	Apply(ctx context.Context, spec NodeSpec) error
 	Remove(ctx context.Context, nodeID string) error
+}
+
+type DeployStageName string
+
+const (
+	DeployStageRender   DeployStageName = "render"
+	DeployStageInstall  DeployStageName = "install"
+	DeployStageApply    DeployStageName = "apply"
+	DeployStageReload   DeployStageName = "reload"
+	DeployStageHealth   DeployStageName = "health"
+	DeployStageRollback DeployStageName = "rollback"
+)
+
+type DeployRequest struct {
+	NodeID   string
+	Spec     NodeSpec
+	Rendered []byte
+	DataDir  string
+	Revision string
+	Runner   CommandRunner
+}
+
+type RollbackRequest struct {
+	NodeID     string
+	Spec       NodeSpec
+	DataDir    string
+	Revision   string
+	ConfigPath string
+	BackupPath string
+	Runner     CommandRunner
+}
+
+type StageResult struct {
+	Name       DeployStageName `json:"name"`
+	Status     string          `json:"status"`
+	Message    string          `json:"message,omitempty"`
+	StartedAt  string          `json:"startedAt,omitempty"`
+	FinishedAt string          `json:"finishedAt,omitempty"`
+	DurationMs int64           `json:"durationMs,omitempty"`
+}
+
+type ApplyResult struct {
+	StageResult
+	ConfigPath        string `json:"configPath,omitempty"`
+	BackupPath        string `json:"backupPath,omitempty"`
+	RollbackAvailable bool   `json:"rollbackAvailable"`
+}
+
+type HealthResult struct {
+	StageResult
+	OK             bool   `json:"ok"`
+	ServiceName    string `json:"serviceName,omitempty"`
+	ServiceStatus  string `json:"serviceStatus,omitempty"`
+	Runtime        string `json:"runtime,omitempty"`
+	RuntimeVersion string `json:"runtimeVersion,omitempty"`
+	Listen         string `json:"listen,omitempty"`
+	Port           int    `json:"port,omitempty"`
+}
+
+type CommandResult struct {
+	Command  []string
+	ExitCode int
+	Stdout   string
+	Stderr   string
+	Duration time.Duration
+}
+
+type CommandRunner interface {
+	Run(ctx context.Context, name string, args ...string) (CommandResult, error)
+	LookPath(file string) (string, error)
+}
+
+type DeploymentProvider interface {
+	Install(ctx context.Context, req DeployRequest) (StageResult, error)
+	ApplyConfig(ctx context.Context, req DeployRequest) (ApplyResult, error)
+	Reload(ctx context.Context, req DeployRequest) (StageResult, error)
+	Health(ctx context.Context, req DeployRequest) (HealthResult, error)
+	Rollback(ctx context.Context, req RollbackRequest) (StageResult, error)
 }
 
 type Registry struct {

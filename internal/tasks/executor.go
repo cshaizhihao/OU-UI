@@ -1,14 +1,13 @@
 package tasks
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
-	"os"
-	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/cshaizhihao/OU-UI/internal/agentruntime"
+	"github.com/cshaizhihao/OU-UI/internal/deploy"
 	"github.com/cshaizhihao/OU-UI/internal/models"
 	"github.com/cshaizhihao/OU-UI/internal/provider"
 	"github.com/cshaizhihao/OU-UI/internal/providers"
@@ -35,13 +34,18 @@ type Result struct {
 type Executor struct {
 	DataDir  string
 	Registry provider.Registry
+	Runner   provider.CommandRunner
 }
 
 func NewExecutor(dataDir string) Executor {
 	if dataDir == "" {
 		dataDir = "/var/lib/ou-ui-agent"
 	}
-	return Executor{DataDir: dataDir, Registry: providers.DefaultRegistry()}
+	return Executor{
+		DataDir:  dataDir,
+		Registry: providers.DefaultRegistry(),
+		Runner:   deploy.OSRunner{Timeout: 20 * time.Second, MaxOutputBytes: 2048},
+	}
 }
 
 func (e Executor) Execute(task Task) Result {
@@ -58,7 +62,7 @@ func (e Executor) Execute(task Task) Result {
 	case models.TaskTypeRuntimeStatus:
 		return Result{Status: models.TaskStatusSucceeded, Result: map[string]any{
 			"metrics":      agentruntime.CollectRuntimeMetrics(),
-			"capabilities": []string{"monitoring", CapabilityTaskPolling, models.TaskTypeNoop, models.TaskTypeRuntimeStatus, "xray.render", "hysteria2.render"},
+			"capabilities": []string{"monitoring", CapabilityTaskPolling, models.TaskTypeNoop, models.TaskTypeRuntimeStatus, "xray.render", "xray.deploy", "hysteria2.render", "hysteria2.deploy"},
 		}, Logs: "runtime status collected"}
 	case models.TaskTypeNodeDeploy:
 		return e.deployNode(task)
@@ -80,34 +84,104 @@ func (e Executor) deployNode(task Task) Result {
 	if payload.NodeID == "" {
 		return failed("validate node deploy payload", fmt.Errorf("nodeId is required"))
 	}
-	rendered, err := e.Registry.Render(payload.Spec)
+	runtimeProvider, ok := e.Registry.Get(payload.Spec.Runtime)
+	if !ok {
+		return failed("select runtime provider", fmt.Errorf("unsupported runtime %q", payload.Spec.Runtime))
+	}
+	deployer, ok := runtimeProvider.(provider.DeploymentProvider)
+	if !ok {
+		return failed("select deployment provider", fmt.Errorf("runtime %q does not support deployment", payload.Spec.Runtime))
+	}
+	revision := time.Now().UTC().Format("20060102T150405Z")
+	renderStarted := time.Now()
+	rendered, err := runtimeProvider.Render(payload.Spec)
 	if err != nil {
 		return failed("render provider config", err)
 	}
-
-	ext := "json"
-	if payload.Spec.Runtime == provider.RuntimeHysteria2 {
-		ext = "yaml"
-	}
-	dir := filepath.Join(e.DataDir, "generated", strings.ReplaceAll(string(payload.Spec.Runtime), "/", "_"))
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return failed("create config directory", err)
-	}
-	configPath := filepath.Join(dir, payload.NodeID+"."+ext)
-	if err := os.WriteFile(configPath, rendered, 0o600); err != nil {
-		return failed("write rendered config", err)
+	stages := []provider.StageResult{
+		deploy.StageOK(provider.DeployStageRender, "provider config rendered", renderStarted),
 	}
 
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+	req := provider.DeployRequest{
+		NodeID:   payload.NodeID,
+		Spec:     payload.Spec,
+		Rendered: rendered,
+		DataDir:  e.DataDir,
+		Revision: revision,
+		Runner:   e.Runner,
+	}
+	result := map[string]any{
+		"nodeId":   payload.NodeID,
+		"runtime":  payload.Spec.Runtime,
+		"protocol": payload.Spec.Protocol,
+		"revision": revision,
+	}
+	appendStage := func(stage provider.StageResult) {
+		stages = append(stages, stage)
+	}
+	failWithRollback := func(stageName string, err error, applyResult provider.ApplyResult) Result {
+		if applyResult.ConfigPath != "" || applyResult.BackupPath != "" {
+			rollbackCtx, rollbackCancel := context.WithTimeout(context.Background(), 20*time.Second)
+			defer rollbackCancel()
+			rollback, rollbackErr := deployer.Rollback(rollbackCtx, provider.RollbackRequest{
+				NodeID:     payload.NodeID,
+				Spec:       payload.Spec,
+				DataDir:    e.DataDir,
+				Revision:   revision,
+				ConfigPath: applyResult.ConfigPath,
+				BackupPath: applyResult.BackupPath,
+				Runner:     e.Runner,
+			})
+			appendStage(rollback)
+			result["rollback"] = map[string]any{
+				"attempted": true,
+				"status":    rollback.Status,
+				"error":     errorString(rollbackErr),
+			}
+		}
+		result["stage"] = stageName
+		result["error"] = err.Error()
+		result["stages"] = stages
+		return Result{Status: models.TaskStatusFailed, Result: result, Logs: "node deploy failed at " + stageName}
+	}
+
+	installStage, err := deployer.Install(ctx, req)
+	appendStage(installStage)
+	if err != nil {
+		result["stages"] = stages
+		result["stage"] = string(provider.DeployStageInstall)
+		result["error"] = err.Error()
+		return Result{Status: models.TaskStatusFailed, Result: result, Logs: "runtime install precheck failed"}
+	}
+	applyResult, err := deployer.ApplyConfig(ctx, req)
+	appendStage(applyResult.StageResult)
+	result["configPath"] = applyResult.ConfigPath
+	result["backupPath"] = applyResult.BackupPath
+	result["rollbackAvailable"] = applyResult.RollbackAvailable
+	if err != nil {
+		return failWithRollback(string(provider.DeployStageApply), err, applyResult)
+	}
+	reloadStage, err := deployer.Reload(ctx, req)
+	appendStage(reloadStage)
+	if err != nil {
+		return failWithRollback(string(provider.DeployStageReload), err, applyResult)
+	}
+	healthResult, err := deployer.Health(ctx, req)
+	appendStage(healthResult.StageResult)
+	result["health"] = healthResult
+	result["serviceName"] = healthResult.ServiceName
+	result["serviceStatus"] = healthResult.ServiceStatus
+	result["runtimeVersion"] = healthResult.RuntimeVersion
+	if err != nil {
+		return failWithRollback(string(provider.DeployStageHealth), err, applyResult)
+	}
+	result["stages"] = stages
 	return Result{
 		Status: models.TaskStatusSucceeded,
-		Result: map[string]any{
-			"nodeId":     payload.NodeID,
-			"runtime":    payload.Spec.Runtime,
-			"protocol":   payload.Spec.Protocol,
-			"configPath": configPath,
-			"renderedAt": time.Now().UTC().Format(time.RFC3339),
-		},
-		Logs: "rendered provider config to " + configPath,
+		Result: result,
+		Logs:   "node deploy completed",
 	}
 }
 
@@ -117,4 +191,11 @@ func failed(stage string, err error) Result {
 		Result: map[string]any{"stage": stage, "error": err.Error()},
 		Logs:   stage + ": " + err.Error(),
 	}
+}
+
+func errorString(err error) string {
+	if err == nil {
+		return ""
+	}
+	return err.Error()
 }

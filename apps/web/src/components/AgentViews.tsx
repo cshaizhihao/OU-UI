@@ -1,13 +1,16 @@
 import {
+  getAgentRuntimeApply,
   getAgentTaskState,
   getAuthState,
   getLastHeartbeat,
   getRegistrationState,
   getRuntimeCapabilities,
   getRuntimeLabel,
-  type ControlBadgeState
+  runtimeApplyStageLabel,
+  type ControlBadgeState,
+  type RuntimeApplyView
 } from "../controlFields";
-import type { Agent, AgentStatus, ControlTaskStatus } from "../data";
+import type { Agent, AgentStatus, ControlTaskStatus, RuntimeApplyStage } from "../data";
 import type { ReactNode } from "react";
 
 const statusLabel: Record<AgentStatus, string> = {
@@ -45,6 +48,7 @@ export function AgentCards({ agents }: AgentViewsProps) {
           const runtime = getRuntimeLabel(agent.runtime);
           const capabilities = getRuntimeCapabilities(agent);
           const task = getAgentTaskState(agent);
+          const runtimeApply = getAgentRuntimeApply(agent);
 
           return (
             <article className="agent-card" key={agent.id}>
@@ -60,6 +64,8 @@ export function AgentCards({ agents }: AgentViewsProps) {
 
               <div className="agent-card-meta">
                 <span>{runtime}</span>
+                <span>{runtimeApply.runtimeVersion}</span>
+                <span>{formatServiceStatus(runtimeApply.serviceStatus)}</span>
                 <span>Queue {agent.queue}</span>
               </div>
 
@@ -72,6 +78,8 @@ export function AgentCards({ agents }: AgentViewsProps) {
                 </ControlDatum>
                 <ControlDatum label="Last heartbeat" value={heartbeat} />
               </div>
+
+              <RuntimeApplySummary apply={runtimeApply} />
 
               <div className="agent-task-summary">
                 <div>
@@ -129,6 +137,8 @@ export function AgentTable({ agents }: AgentViewsProps) {
               <th>Status</th>
               <th>Control</th>
               <th>Runtime</th>
+              <th>Apply stages</th>
+              <th>Config / rollback</th>
               <th>Capabilities</th>
               <th>CPU</th>
               <th>Memory</th>
@@ -146,6 +156,7 @@ export function AgentTable({ agents }: AgentViewsProps) {
               const runtime = getRuntimeLabel(agent.runtime);
               const capabilities = getRuntimeCapabilities(agent);
               const task = getAgentTaskState(agent);
+              const runtimeApply = getAgentRuntimeApply(agent);
 
               return (
                 <tr key={agent.id}>
@@ -162,7 +173,27 @@ export function AgentTable({ agents }: AgentViewsProps) {
                       <ControlPill state={auth} />
                     </div>
                   </td>
-                  <td>{runtime}</td>
+                  <td>
+                    <div className="runtime-cell">
+                      <strong>{runtime}</strong>
+                      <span>{runtimeApply.runtimeVersion}</span>
+                      <ServiceStatusPill status={runtimeApply.serviceStatus} />
+                    </div>
+                  </td>
+                  <td>
+                    <RuntimeApplyPipeline apply={runtimeApply} compact />
+                    <RuntimeFailureStage stage={runtimeApply.failureStage} />
+                  </td>
+                  <td>
+                    <div className="config-cell">
+                      <span title={runtimeApply.configPath}>{runtimeApply.configPath}</span>
+                      <strong>
+                        {runtimeApply.rollbackAvailable
+                          ? "Rollback available"
+                          : "Rollback unavailable"}
+                      </strong>
+                    </div>
+                  </td>
                   <td>
                     <CapabilityList capabilities={capabilities} compact />
                   </td>
@@ -200,8 +231,87 @@ function ControlPill({ state }: { state: ControlBadgeState }) {
   return <span className={`status control-pill control-${state.tone}`}>{state.label}</span>;
 }
 
+function ServiceStatusPill({ status }: { status: string }) {
+  return (
+    <span className={`status service-pill service-${getServiceTone(status)}`}>
+      {formatServiceStatus(status)}
+    </span>
+  );
+}
+
 export function TaskStatePill({ status }: { status: ControlTaskStatus }) {
   return <span className={`task-state task-state-${status}`}>{taskStatusLabel[status]}</span>;
+}
+
+export function RuntimeApplyPipeline({
+  apply,
+  compact = false
+}: {
+  apply: RuntimeApplyView;
+  compact?: boolean;
+}) {
+  return (
+    <div
+      className={`runtime-pipeline${compact ? " compact" : ""}`}
+      aria-label="Runtime apply stages"
+    >
+      {apply.phases.map((phase) => (
+        <span
+          className={`runtime-stage runtime-stage-${phase.status}`}
+          key={phase.stage}
+          title={`${runtimeApplyStageLabel[phase.stage]} ${phase.status}`}
+        >
+          {compact
+            ? runtimeApplyStageLabel[phase.stage].slice(0, 1)
+            : runtimeApplyStageLabel[phase.stage]}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+function RuntimeApplySummary({ apply }: { apply: RuntimeApplyView }) {
+  return (
+    <div className="runtime-apply-summary">
+      <div className="runtime-apply-head">
+        <div>
+          <span>Runtime apply</span>
+          <strong>{runtimeApplyStageLabel[apply.currentStage]}</strong>
+        </div>
+        <ServiceStatusPill status={apply.serviceStatus} />
+      </div>
+      <RuntimeApplyPipeline apply={apply} />
+      <div className="runtime-apply-meta">
+        <RuntimeMeta label="Config" value={apply.configPath} />
+        <RuntimeMeta
+          label="Rollback"
+          value={apply.rollbackAvailable ? "Available" : "Unavailable"}
+        />
+        <RuntimeFailureStage stage={apply.failureStage} />
+      </div>
+    </div>
+  );
+}
+
+function RuntimeMeta({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <span>{label}</span>
+      <strong title={value}>{value}</strong>
+    </div>
+  );
+}
+
+function RuntimeFailureStage({ stage }: { stage?: RuntimeApplyStage }) {
+  if (!stage) {
+    return null;
+  }
+
+  return (
+    <span className="failure-stage">
+      Failed at {runtimeApplyStageLabel[stage]}
+    </span>
+  );
 }
 
 function ControlDatum({
@@ -277,4 +387,31 @@ function MeterLine({ label, value, suffix }: { label: string; value: number; suf
       </div>
     </div>
   );
+}
+
+function formatServiceStatus(status: string): string {
+  return status
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/\b[a-z]/g, (letter) => letter.toUpperCase());
+}
+
+function getServiceTone(status: string): "ok" | "warning" | "danger" | "muted" | "info" {
+  const normalized = status.toLowerCase();
+
+  if (["running", "active", "healthy", "ok"].some((term) => normalized.includes(term))) {
+    return "ok";
+  }
+  if (["reload", "starting", "pending", "maintenance"].some((term) => normalized.includes(term))) {
+    return "warning";
+  }
+  if (["degraded", "failed", "error", "stopped", "offline"].some((term) => normalized.includes(term))) {
+    return "danger";
+  }
+  if (["unknown", "unreported"].some((term) => normalized.includes(term))) {
+    return "muted";
+  }
+
+  return "info";
 }
