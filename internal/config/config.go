@@ -3,7 +3,9 @@ package config
 import (
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
+	"time"
 )
 
 type ServerConfig struct {
@@ -17,6 +19,8 @@ type ServerConfig struct {
 	SecurePath     string
 	TLSCertFile    string
 	TLSKeyFile     string
+	AgentOfflineAfterSeconds int
+	TaskTimeoutSeconds       int
 }
 
 func LoadServer() ServerConfig {
@@ -36,6 +40,8 @@ func LoadServer() ServerConfig {
 		SecurePath:     securePath,
 		TLSCertFile:    os.Getenv("OUUI_TLS_CERT_FILE"),
 		TLSKeyFile:     os.Getenv("OUUI_TLS_KEY_FILE"),
+		AgentOfflineAfterSeconds: getenvInt("OUUI_AGENT_OFFLINE_AFTER_SECONDS", 45),
+		TaskTimeoutSeconds:       getenvInt("OUUI_TASK_TIMEOUT_SECONDS", 300),
 	}
 }
 
@@ -47,9 +53,29 @@ func (c ServerConfig) TLSEnabled() bool {
 	return c.TLSCertFile != "" && c.TLSKeyFile != ""
 }
 
+func (c ServerConfig) AgentOfflineAfter() time.Duration {
+	return time.Duration(c.AgentOfflineAfterSeconds) * time.Second
+}
+
+func (c ServerConfig) TaskTimeout() time.Duration {
+	return time.Duration(c.TaskTimeoutSeconds) * time.Second
+}
+
 func getenv(key, fallback string) string {
 	if value := os.Getenv(key); value != "" {
 		return value
 	}
 	return fallback
+}
+
+func getenvInt(key string, fallback int) int {
+	value := strings.TrimSpace(os.Getenv(key))
+	if value == "" {
+		return fallback
+	}
+	parsed, err := strconv.Atoi(value)
+	if err != nil || parsed <= 0 {
+		return fallback
+	}
+	return parsed
 }

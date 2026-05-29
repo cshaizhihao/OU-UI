@@ -1,16 +1,16 @@
 # OU-UI SOP
 
-版本：`v0.3.0`
+版本：`v0.4.0`
 
 仓库：<https://github.com/cshaizhihao/OU-UI>
 
 ## 1. 安装前检查
 
 1. 目标服务器建议使用 Linux，并确认当前用户可以创建安装目录，例如 `/opt/ou-ui`。
-2. 安装脚本会检测 Docker daemon 与 Docker Compose v2；如果只生成配置，可暂不启动 Docker。
+2. 安装脚本会检测 Docker daemon 与 Docker Compose v2；如只生成配置，可暂不启动 Docker。
 3. 默认 Web 端口为 `3000`，脚本会用 `ss`、`lsof` 或 `netstat` 检测端口占用。
 4. 如需域名访问，先确认 DNS A/AAAA 记录已指向当前服务器。
-5. 如需自动签发 SSL，先在当前 shell 中导出 DNS API 环境变量，例如 `CF_Token`；不要把真实 token 写入仓库、文档、日志或截图。
+5. 如需自动签发 SSL，只在当前 shell 导出 DNS API 环境变量，例如 `CF_Token`；不要把真实 token 写入仓库、文档、日志或截图。
 
 ## 2. 标准安装
 
@@ -30,40 +30,31 @@ bash scripts/install.sh
 
 安装完成后，立即保存脚本回显的登录链接、管理员账号和密码。不要提交生成的 `.env`、证书私钥或运行日志。
 
-## 3. SSL 与 acme.sh
+## 3. Agent 接入
 
-自动签发使用当前 shell 中的环境变量：
+面板可生成 Agent 一键安装脚本：
+
+```text
+/安全路径/api/v1/agents/install-script
+```
+
+也可在被控机运行：
 
 ```bash
-export CF_Token="your-cloudflare-token"
-export ACME_EMAIL="admin@example.com"
-bash scripts/install.sh
+bash scripts/install-agent.sh "https://panel.example.com/安全路径" "Agent注册Token"
 ```
 
-脚本查找 acme.sh 的真实路径顺序：
+v0.4.0 的 Agent 安装脚本会写入 `/etc/ou-ui/agent.env`，创建 systemd 服务，并把运行状态、日志命令回显给用户。Agent 进程会把本机身份保存到数据目录，避免重启后重复注册。
 
-1. `PATH` 中的 `acme.sh`
-2. `$HOME/.acme.sh/acme.sh`
-3. 未找到时通过 `https://get.acme.sh` 安装到当前用户目录
+## 4. 任务控制链路
 
-证书默认安装到：
+v0.4.0 起，Server 和 Agent 对任务执行采用以下约定：
 
-```text
-/opt/ou-ui/certs/fullchain.pem
-/opt/ou-ui/certs/privkey.pem
-```
-
-手动证书也必须放到同一路径，或在 `.env` 中设置 `OUUI_TLS_CERT_FILE` 与 `OUUI_TLS_KEY_FILE` 对应容器内路径。
-
-## 4. Agent 安装入口
-
-面板安装脚本会在安装目录生成：
-
-```text
-/opt/ou-ui/docs/agent-install.md
-```
-
-该文件包含面向节点的 Agent 构建和启动命令，会引用本次生成的面板地址与 Agent 注册令牌。令牌只应在受控机器上使用，不要复制到仓库、工单或公共聊天中。
+1. Server 下发任务前校验 Agent 是否在线、是否支持 `task-polling` 和目标 runtime capability。
+2. Agent 拉取任务时，Server 将任务从 `queued` CAS 更新为 `running`，并写入 `leaseExpiresAt`。
+3. Agent 回传结果时必须带当前 `attempt`，Server 只接受仍处于 `running` 且 attempt 匹配的更新。
+4. 超过租约的任务会被重新排队；超过最大尝试次数后标记为 `failed`。
+5. 终态任务不可被旧 Agent 回包覆盖。
 
 ## 5. CI
 
@@ -76,7 +67,7 @@ GitHub Actions 工作流位于 `.github/workflows/ci.yml`，覆盖：
 - Docker `web`、`server` target build
 - Gitleaks secret scan
 
-CI 不需要真实业务 token。secret scan 使用仓库上下文内的 `GITHUB_TOKEN`，不要新增项目级真实凭据。
+CI 不需要真实业务 token。不要新增项目级真实凭据。
 
 ## 6. 升级
 
@@ -91,41 +82,3 @@ docker compose ps
 ```
 
 5. 验证 Web 页面、Agent 注册、日志和健康状态。
-
-## 7. 回滚
-
-1. 停止当前服务：
-
-```bash
-docker compose down
-```
-
-2. 切回上一版本镜像或上一份 Compose 文件。
-3. 恢复对应版本的数据备份。
-4. 重新启动并查看日志：
-
-```bash
-docker compose logs --tail=200
-```
-
-## 8. 故障排查
-
-端口被占用：
-
-```bash
-ss -lntp | grep 3000
-```
-
-Docker 未启动或权限不足：
-
-```bash
-docker info
-docker compose version
-```
-
-证书签发失败：
-
-1. 检查域名解析是否正确。
-2. 确认 `CF_Token` 只在当前安全 shell 会话中导出。
-3. 查看 acme.sh 输出，不要公开包含敏感值的日志。
-4. 重新运行安装脚本或手动放置证书后再启动服务。

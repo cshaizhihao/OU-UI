@@ -1,5 +1,6 @@
-import { AgentCards, AgentTable } from "../components/AgentViews";
+import { AgentCards, AgentTable, TaskStatePill } from "../components/AgentViews";
 import { AnalyticsPanel } from "../components/Charts";
+import { getDeployTaskState, getRuntimeLabel, getTaskProgress } from "../controlFields";
 import {
   agents,
   nodeHealthRows,
@@ -99,26 +100,40 @@ export function DashboardPage() {
             <button className="ghost-button">Pause queue</button>
           </div>
           <div className="task-list">
-            {taskQueue.map((task) => (
-              <article className="task-item" key={task.id}>
-                <div className="task-item-head">
-                  <div>
-                    <strong>{task.action}</strong>
-                    <span>
-                      {task.agentName} - {task.runtime} - {task.protocol}
-                    </span>
+            {taskQueue.map((task) => {
+              const taskState = getDeployTaskState(task);
+              const progress = getTaskProgress(task);
+
+              return (
+                <article className="task-item" key={task.id}>
+                  <div className="task-item-head">
+                    <div>
+                      <strong>{task.action}</strong>
+                      <span>
+                        {task.agentName} - {getRuntimeLabel(task.runtime)} - {task.protocol}
+                      </span>
+                    </div>
+                    <small>{task.eta ?? taskState.status}</small>
                   </div>
-                  <small>{task.eta}</small>
-                </div>
-                <div className="progress">
-                  <span style={{ width: `${task.progress}%` }} />
-                </div>
-                <div className="task-meta">
-                  <span>{task.id}</span>
-                  <span>{task.state}</span>
-                </div>
-              </article>
-            ))}
+                  <div className="progress">
+                    <span
+                      className={`progress-${taskState.status}`}
+                      style={{ width: `${progress}%` }}
+                    />
+                  </div>
+                  <div className="task-meta">
+                    <span>{task.id}</span>
+                    <TaskStatePill status={taskState.status} />
+                    <span>Retries {taskState.retryCount}</span>
+                  </div>
+                  {taskState.failureReason ? (
+                    <p className="task-reason">
+                      Failure reason: {taskState.failureReason}
+                    </p>
+                  ) : null}
+                </article>
+              );
+            })}
           </div>
         </section>
       </div>

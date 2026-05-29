@@ -29,7 +29,51 @@ type RuntimeMetrics struct {
 	SwapTotal     uint64  `json:"swapTotal"`
 	NetRxBytes    uint64  `json:"netRxBytes"`
 	NetTxBytes    uint64  `json:"netTxBytes"`
+	NetRxRateBps  uint64  `json:"netRxRateBps"`
+	NetTxRateBps  uint64  `json:"netTxRateBps"`
 	CollectedAt   string  `json:"collectedAt"`
+}
+
+type Sampler struct {
+	lastCPU cpuTimes
+	hasCPU  bool
+	lastRx  uint64
+	lastTx  uint64
+	lastAt  time.Time
+}
+
+func NewSampler() *Sampler {
+	return &Sampler{}
+}
+
+func (s *Sampler) Collect() RuntimeMetrics {
+	metrics := CollectRuntimeMetrics()
+	now := time.Now()
+	rx, tx := metrics.NetRxBytes, metrics.NetTxBytes
+
+	if currentCPU, ok := readCPUTimes(); ok {
+		if s.hasCPU && currentCPU.total >= s.lastCPU.total && currentCPU.idle >= s.lastCPU.idle {
+			totalDelta := currentCPU.total - s.lastCPU.total
+			idleDelta := currentCPU.idle - s.lastCPU.idle
+			if totalDelta > 0 && idleDelta <= totalDelta {
+				metrics.CPUPercent = float64(totalDelta-idleDelta) * 100 / float64(totalDelta)
+			}
+		}
+		s.lastCPU = currentCPU
+		s.hasCPU = true
+	}
+
+	if !s.lastAt.IsZero() {
+		elapsed := now.Sub(s.lastAt).Seconds()
+		if elapsed > 0 {
+			metrics.NetRxRateBps = uint64(float64(subtract(rx, s.lastRx)) / elapsed)
+			metrics.NetTxRateBps = uint64(float64(subtract(tx, s.lastTx)) / elapsed)
+		}
+	}
+	s.lastRx = rx
+	s.lastTx = tx
+	s.lastAt = now
+	return metrics
 }
 
 func CollectSystemInfo() SystemInfo {
@@ -154,6 +198,43 @@ func readCPUModel() string {
 		}
 	}
 	return runtime.GOARCH
+}
+
+type cpuTimes struct {
+	idle  uint64
+	total uint64
+}
+
+func readCPUTimes() (cpuTimes, bool) {
+	content, err := os.ReadFile("/proc/stat")
+	if err != nil {
+		return cpuTimes{}, false
+	}
+	lines := strings.Split(string(content), "\n")
+	if len(lines) == 0 {
+		return cpuTimes{}, false
+	}
+	fields := strings.Fields(lines[0])
+	if len(fields) < 5 || fields[0] != "cpu" {
+		return cpuTimes{}, false
+	}
+	var values []uint64
+	for _, field := range fields[1:] {
+		value, err := strconv.ParseUint(field, 10, 64)
+		if err != nil {
+			return cpuTimes{}, false
+		}
+		values = append(values, value)
+	}
+	var total uint64
+	for _, value := range values {
+		total += value
+	}
+	idle := values[3]
+	if len(values) > 4 {
+		idle += values[4]
+	}
+	return cpuTimes{idle: idle, total: total}, true
 }
 
 func readFirstLine(path string) string {

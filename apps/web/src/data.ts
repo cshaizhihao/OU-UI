@@ -2,14 +2,43 @@ export type AgentStatus = "online" | "degraded" | "offline";
 
 export type Runtime = "Xray" | "Hysteria2";
 
+export type RuntimeRef =
+  | Runtime
+  | string
+  | {
+      name?: string;
+      type?: Runtime | string;
+      capabilities?: string[];
+      runtimeCapabilities?: string[];
+      runtime_capabilities?: string[];
+    };
+
 export type Protocol = "VLESS Reality" | "VMess" | "Trojan" | "Shadowsocks" | "Hysteria2";
+
+export type ControlTaskStatus = "pending" | "running" | "success" | "failed";
+export type LegacyTaskStatus = "queued" | "done";
+
+export type AgentControlTask = {
+  id?: string;
+  status?: ControlTaskStatus | LegacyTaskStatus | string;
+  state?: ControlTaskStatus | LegacyTaskStatus | string;
+  failureReason?: string;
+  failure_reason?: string;
+  error?: string;
+  errorMessage?: string;
+  error_message?: string;
+  retryCount?: number;
+  retry_count?: number;
+  retries?: number;
+  attempts?: number;
+};
 
 export type Agent = {
   id: string;
   name: string;
   region: string;
   status: AgentStatus;
-  runtime: Runtime;
+  runtime: RuntimeRef;
   ip: string;
   cpu: number;
   memory: number;
@@ -19,18 +48,64 @@ export type Agent = {
   quotaTrafficGb: number;
   queue: number;
   updatedAt: string;
+  registrationStatus?: string;
+  registration_status?: string;
+  registerStatus?: string;
+  registrationState?: string;
+  registration_state?: string;
+  registered?: boolean;
+  isRegistered?: boolean;
+  is_registered?: boolean;
+  authStatus?: string;
+  auth_status?: string;
+  authenticationStatus?: string;
+  authentication_status?: string;
+  authenticated?: boolean;
+  isAuthenticated?: boolean;
+  is_authenticated?: boolean;
+  lastHeartbeat?: string;
+  lastHeartbeatAt?: string;
+  last_heartbeat?: string;
+  last_heartbeat_at?: string;
+  heartbeatAt?: string;
+  heartbeat_at?: string;
+  runtimeCapabilities?: string[];
+  runtime_capabilities?: string[];
+  capabilities?: string[];
+  controlTask?: AgentControlTask;
+  control_task?: AgentControlTask;
+  currentTask?: AgentControlTask;
+  current_task?: AgentControlTask;
+  task?: AgentControlTask;
+  taskStatus?: ControlTaskStatus | LegacyTaskStatus | string;
+  task_status?: ControlTaskStatus | LegacyTaskStatus | string;
+  failureReason?: string;
+  failure_reason?: string;
+  retryCount?: number;
+  retry_count?: number;
+  retries?: number;
 };
 
 export type DeployTask = {
   id: string;
   agentId: string;
   agentName: string;
-  runtime: Runtime;
+  runtime: RuntimeRef;
   protocol: Protocol;
   action: string;
-  state: "queued" | "running" | "done" | "failed";
-  progress: number;
-  eta: string;
+  status?: ControlTaskStatus | LegacyTaskStatus | string;
+  state?: ControlTaskStatus | LegacyTaskStatus | string;
+  progress?: number;
+  eta?: string;
+  failureReason?: string;
+  failure_reason?: string;
+  error?: string;
+  errorMessage?: string;
+  error_message?: string;
+  retryCount?: number;
+  retry_count?: number;
+  retries?: number;
+  attempts?: number;
 };
 
 export const agents: Agent[] = [
@@ -48,7 +123,15 @@ export const agents: Agent[] = [
     usedTrafficGb: 684,
     quotaTrafficGb: 1200,
     queue: 3,
-    updatedAt: "18s ago"
+    updatedAt: "18s ago",
+    registrationStatus: "registered",
+    authStatus: "authenticated",
+    lastHeartbeat: "18s ago",
+    runtimeCapabilities: ["hot reload", "reality keys", "config dry-run"],
+    controlTask: {
+      status: "running",
+      retryCount: 0
+    }
   },
   {
     id: "ou-sin-02",
@@ -64,7 +147,15 @@ export const agents: Agent[] = [
     usedTrafficGb: 921,
     quotaTrafficGb: 1600,
     queue: 5,
-    updatedAt: "42s ago"
+    updatedAt: "42s ago",
+    registrationStatus: "registered",
+    authStatus: "authenticated",
+    lastHeartbeat: "42s ago",
+    runtimeCapabilities: ["port hopping", "udp relay", "bandwidth policy"],
+    controlTask: {
+      status: "pending",
+      retryCount: 1
+    }
   },
   {
     id: "ou-tyo-03",
@@ -80,7 +171,16 @@ export const agents: Agent[] = [
     usedTrafficGb: 1036,
     quotaTrafficGb: 1200,
     queue: 9,
-    updatedAt: "2m ago"
+    updatedAt: "2m ago",
+    registrationStatus: "registered",
+    authStatus: "expired",
+    lastHeartbeat: "2m ago",
+    runtimeCapabilities: ["certificate sync", "tls fingerprint", "inbound patch"],
+    controlTask: {
+      status: "failed",
+      failureReason: "Certificate chain precheck failed",
+      retryCount: 2
+    }
   },
   {
     id: "ou-lax-04",
@@ -96,7 +196,15 @@ export const agents: Agent[] = [
     usedTrafficGb: 438,
     quotaTrafficGb: 1000,
     queue: 0,
-    updatedAt: "maintenance"
+    updatedAt: "maintenance",
+    registrationStatus: "pending",
+    authStatus: "unauthenticated",
+    lastHeartbeat: "maintenance window",
+    runtimeCapabilities: [],
+    controlTask: {
+      status: "success",
+      retryCount: 0
+    }
   }
 ];
 
@@ -120,7 +228,8 @@ export const taskQueue: DeployTask[] = [
     action: "Generate inbound and Reality shortId",
     state: "running",
     progress: 72,
-    eta: "1m 20s"
+    eta: "1m 20s",
+    retryCount: 0
   },
   {
     id: "job-23062",
@@ -129,9 +238,10 @@ export const taskQueue: DeployTask[] = [
     runtime: "Hysteria2",
     protocol: "Hysteria2",
     action: "Refresh port-hopping policy",
-    state: "queued",
+    state: "pending",
     progress: 18,
-    eta: "3m 45s"
+    eta: "3m 45s",
+    retryCount: 1
   },
   {
     id: "job-23058",
@@ -140,9 +250,23 @@ export const taskQueue: DeployTask[] = [
     runtime: "Xray",
     protocol: "Trojan",
     action: "Roll out certificate chain",
-    state: "done",
+    state: "success",
     progress: 100,
-    eta: "done"
+    eta: "done",
+    retryCount: 0
+  },
+  {
+    id: "job-23057",
+    agentId: "ou-tyo-03",
+    agentName: "Tokyo Relay 03",
+    runtime: "Xray",
+    protocol: "Trojan",
+    action: "Apply certificate chain",
+    state: "failed",
+    progress: 100,
+    eta: "retry scheduled",
+    failureReason: "Certificate chain precheck failed",
+    retryCount: 2
   }
 ];
 

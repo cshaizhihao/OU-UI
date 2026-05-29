@@ -47,11 +47,24 @@ func IsTerminalTaskStatus(status string) bool {
 	}
 }
 
+const (
+	AgentStatusOnline   = "online"
+	AgentStatusDegraded = "degraded"
+	AgentStatusOffline  = "offline"
+)
+
+const (
+	AgentAuthActive  = "active"
+	AgentAuthRevoked = "revoked"
+)
+
 type Agent struct {
 	ID            string         `gorm:"primaryKey" json:"id"`
+	InstallID     string         `gorm:"index" json:"installId"`
 	Name          string         `json:"name"`
 	Version       string         `json:"version"`
 	Status        string         `json:"status"`
+	AuthStatus    string         `json:"authStatus"`
 	Hostname      string         `json:"hostname"`
 	OS            string         `json:"os"`
 	Arch          string         `json:"arch"`
@@ -65,7 +78,10 @@ type Agent struct {
 	LastMetrics   datatypes.JSON `json:"lastMetrics"`
 	LastSeenAt    *time.Time     `json:"lastSeenAt"`
 	TrafficLimit  uint64         `json:"trafficLimit"`
+	LastError     string         `json:"lastError"`
 	AgentTokenSHA string         `json:"-"`
+	QueueCount    int            `gorm:"-" json:"queue"`
+	Stale         bool           `gorm:"-" json:"stale"`
 	CreatedAt     time.Time      `json:"createdAt"`
 	UpdatedAt     time.Time      `json:"updatedAt"`
 }
@@ -79,7 +95,10 @@ type Task struct {
 	Result     datatypes.JSON `json:"result"`
 	Logs       string         `json:"logs"`
 	Attempts   int            `json:"attempts"`
+	MaxAttempts int            `json:"maxAttempts"`
+	LastError  string         `json:"lastError"`
 	StartedAt  *time.Time     `json:"startedAt"`
+	LeaseExpiresAt *time.Time  `json:"leaseExpiresAt"`
 	FinishedAt *time.Time     `json:"finishedAt"`
 	CreatedAt  time.Time      `gorm:"index:idx_tasks_agent_status_created" json:"createdAt"`
 	UpdatedAt  time.Time      `json:"updatedAt"`

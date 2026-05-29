@@ -2,12 +2,15 @@ package main
 
 import (
 	"bytes"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"flag"
-	"fmt"
 	"log"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -16,24 +19,44 @@ import (
 )
 
 type registerRequest struct {
-	Name          string                    `json:"name"`
-	Version       string                    `json:"version"`
-	System        agentruntime.SystemInfo   `json:"system"`
-	Capabilities  []string                  `json:"capabilities"`
+	InstallID    string                  `json:"installId"`
+	Name         string                  `json:"name"`
+	Version      string                  `json:"version"`
+	System       agentruntime.SystemInfo `json:"system"`
+	Capabilities []string                `json:"capabilities"`
 }
 
 type registerResponse struct {
 	AgentID    string `json:"agentId"`
 	AgentToken string `json:"agentToken"`
+	InstallID   string `json:"installId"`
 }
 
 type heartbeatRequest struct {
-	Status  string                      `json:"status"`
-	Metrics agentruntime.RuntimeMetrics `json:"metrics"`
+	Status    string                      `json:"status"`
+	Metrics   agentruntime.RuntimeMetrics `json:"metrics"`
+	LastError string                      `json:"lastError"`
 }
 
 type nextTaskResponse struct {
 	Task *tasks.Task `json:"task"`
+}
+
+type agentState struct {
+	InstallID  string `json:"installId"`
+	AgentID    string `json:"agentId"`
+	AgentToken string `json:"agentToken"`
+}
+
+func (s agentState) registered() bool {
+	return s.AgentID != "" && s.AgentToken != ""
+}
+
+type taskUpdateRequest struct {
+	Status  string         `json:"status"`
+	Result  map[string]any `json:"result"`
+	Logs    string         `json:"logs"`
+	Attempt int            `json:"attempt"`
 }
 
 func main() {
@@ -44,8 +67,11 @@ func main() {
 	dataDir := flag.String("data-dir", getenv("OUUI_AGENT_DATA_DIR", "/var/lib/ou-ui-agent"), "agent data directory")
 	flag.Parse()
 
-	if *serverURL == "" || *joinToken == "" {
-		log.Fatal("server and token are required")
+	if *serverURL == "" {
+		log.Fatal("server is required")
+	}
+	if err := os.MkdirAll(*dataDir, 0o700); err != nil {
+		log.Fatalf("create data dir: %v", err)
 	}
 
 	agentName := *name
@@ -54,33 +80,73 @@ func main() {
 		agentName = hostname
 	}
 
+	baseURL := strings.TrimRight(*serverURL, "/")
 	client := &http.Client{Timeout: 15 * time.Second}
-	system := agentruntime.CollectSystemInfo()
-	reg, err := register(client, strings.TrimRight(*serverURL, "/"), *joinToken, registerRequest{
-		Name:         agentName,
-		Version:      "v0.3.0",
-		System:       system,
-		Capabilities: []string{"monitoring", tasks.CapabilityTaskPolling, "noop", "runtime.status", "xray.render", "hysteria2.render"},
-	})
+	state, err := loadState(*dataDir)
 	if err != nil {
-		log.Fatalf("register agent: %v", err)
+		log.Printf("load state failed, a new identity will be created: %v", err)
+	}
+	if state.InstallID == "" {
+		state.InstallID = "ins_" + randomHex(16)
+	}
+	if !state.registered() {
+		if *joinToken == "" {
+			log.Fatal("token is required for first registration")
+		}
+		state, err = enroll(client, baseURL, *joinToken, agentName, state, *dataDir)
+		if err != nil {
+			log.Fatalf("register agent: %v", err)
+		}
+	} else {
+		log.Printf("reusing persisted agent identity %s", state.AgentID)
 	}
 
-	log.Printf("registered as %s", reg.AgentID)
 	ticker := time.NewTicker(*interval)
 	defer ticker.Stop()
 	executor := tasks.NewExecutor(*dataDir)
+	sampler := agentruntime.NewSampler()
 
 	for {
-		metrics := agentruntime.CollectRuntimeMetrics()
-		if err := heartbeat(client, strings.TrimRight(*serverURL, "/"), reg.AgentID, reg.AgentToken, metrics); err != nil {
+		metrics := sampler.Collect()
+		if err := heartbeat(client, baseURL, state.AgentID, state.AgentToken, metrics, ""); err != nil {
 			log.Printf("heartbeat failed: %v", err)
+			if isUnauthorized(err) && *joinToken != "" {
+				log.Printf("agent token was rejected; trying reenrollment")
+				if nextState, enrollErr := enroll(client, baseURL, *joinToken, agentName, state, *dataDir); enrollErr != nil {
+					log.Printf("reenrollment failed: %v", enrollErr)
+				} else {
+					state = nextState
+				}
+			}
 		}
-		if err := runNextTask(client, strings.TrimRight(*serverURL, "/"), reg.AgentID, reg.AgentToken, executor); err != nil {
+		if err := runNextTask(client, baseURL, state.AgentID, state.AgentToken, executor); err != nil {
 			log.Printf("task loop failed: %v", err)
 		}
 		<-ticker.C
 	}
+}
+
+func enroll(client *http.Client, serverURL, joinToken, agentName string, state agentState, dataDir string) (agentState, error) {
+	reg, err := register(client, serverURL, joinToken, registerRequest{
+		InstallID:    state.InstallID,
+		Name:         agentName,
+		Version:      "v0.4.0",
+		System:       agentruntime.CollectSystemInfo(),
+		Capabilities: []string{"monitoring", tasks.CapabilityTaskPolling, "noop", "runtime.status", "xray.render", "hysteria2.render"},
+	})
+	if err != nil {
+		return state, err
+	}
+	state.AgentID = reg.AgentID
+	state.AgentToken = reg.AgentToken
+	if reg.InstallID != "" {
+		state.InstallID = reg.InstallID
+	}
+	if err := saveState(dataDir, state); err != nil {
+		return state, err
+	}
+	log.Printf("registered as %s", state.AgentID)
+	return state, nil
 }
 
 func register(client *http.Client, serverURL, joinToken string, payload registerRequest) (registerResponse, error) {
@@ -99,13 +165,13 @@ func register(client *http.Client, serverURL, joinToken string, payload register
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode >= 300 {
-		return out, fmt.Errorf("server returned %s", resp.Status)
+		return out, statusError{Code: resp.StatusCode, Status: resp.Status}
 	}
 	return out, json.NewDecoder(resp.Body).Decode(&out)
 }
 
-func heartbeat(client *http.Client, serverURL, agentID, agentToken string, metrics agentruntime.RuntimeMetrics) error {
-	body, _ := json.Marshal(heartbeatRequest{Status: "online", Metrics: metrics})
+func heartbeat(client *http.Client, serverURL, agentID, agentToken string, metrics agentruntime.RuntimeMetrics, lastError string) error {
+	body, _ := json.Marshal(heartbeatRequest{Status: "online", Metrics: metrics, LastError: lastError})
 	req, err := http.NewRequest(http.MethodPost, serverURL+"/api/v1/agents/"+agentID+"/heartbeat", bytes.NewReader(body))
 	if err != nil {
 		return err
@@ -119,7 +185,7 @@ func heartbeat(client *http.Client, serverURL, agentID, agentToken string, metri
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode >= 300 {
-		return fmt.Errorf("server returned %s", resp.Status)
+		return statusError{Code: resp.StatusCode, Status: resp.Status}
 	}
 	return nil
 }
@@ -132,9 +198,9 @@ func runNextTask(client *http.Client, serverURL, agentID, agentToken string, exe
 	if task == nil {
 		return nil
 	}
-	log.Printf("executing task %s (%s)", task.ID, task.Type)
+	log.Printf("executing task %s (%s), attempt %d", task.ID, task.Type, task.Attempts)
 	result := executor.Execute(*task)
-	if err := updateTask(client, serverURL, agentID, agentToken, task.ID, result); err != nil {
+	if err := updateTask(client, serverURL, agentID, agentToken, *task, result); err != nil {
 		return err
 	}
 	log.Printf("task %s finished with status %s", task.ID, result.Status)
@@ -153,7 +219,7 @@ func pollTask(client *http.Client, serverURL, agentID, agentToken string) (*task
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("server returned %s", resp.Status)
+		return nil, statusError{Code: resp.StatusCode, Status: resp.Status}
 	}
 	var out nextTaskResponse
 	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
@@ -162,9 +228,14 @@ func pollTask(client *http.Client, serverURL, agentID, agentToken string) (*task
 	return out.Task, nil
 }
 
-func updateTask(client *http.Client, serverURL, agentID, agentToken, taskID string, result tasks.Result) error {
-	body, _ := json.Marshal(result)
-	req, err := http.NewRequest(http.MethodPatch, serverURL+"/api/v1/agents/"+agentID+"/tasks/"+taskID, bytes.NewReader(body))
+func updateTask(client *http.Client, serverURL, agentID, agentToken string, task tasks.Task, result tasks.Result) error {
+	body, _ := json.Marshal(taskUpdateRequest{
+		Status:  result.Status,
+		Result:  result.Result,
+		Logs:    result.Logs,
+		Attempt: task.Attempts,
+	})
+	req, err := http.NewRequest(http.MethodPatch, serverURL+"/api/v1/agents/"+agentID+"/tasks/"+task.ID, bytes.NewReader(body))
 	if err != nil {
 		return err
 	}
@@ -176,9 +247,58 @@ func updateTask(client *http.Client, serverURL, agentID, agentToken, taskID stri
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode >= 300 {
-		return fmt.Errorf("server returned %s", resp.Status)
+		return statusError{Code: resp.StatusCode, Status: resp.Status}
 	}
 	return nil
+}
+
+func loadState(dataDir string) (agentState, error) {
+	var state agentState
+	content, err := os.ReadFile(statePath(dataDir))
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return state, nil
+		}
+		return state, err
+	}
+	return state, json.Unmarshal(content, &state)
+}
+
+func saveState(dataDir string, state agentState) error {
+	if err := os.MkdirAll(dataDir, 0o700); err != nil {
+		return err
+	}
+	content, err := json.MarshalIndent(state, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(statePath(dataDir), content, 0o600)
+}
+
+func statePath(dataDir string) string {
+	return filepath.Join(dataDir, "agent-state.json")
+}
+
+type statusError struct {
+	Code   int
+	Status string
+}
+
+func (e statusError) Error() string {
+	return "server returned " + e.Status
+}
+
+func isUnauthorized(err error) bool {
+	var status statusError
+	return errors.As(err, &status) && status.Code == http.StatusUnauthorized
+}
+
+func randomHex(n int) string {
+	buf := make([]byte, n)
+	if _, err := rand.Read(buf); err != nil {
+		return hex.EncodeToString([]byte(time.Now().Format("150405.000000000")))[:n]
+	}
+	return hex.EncodeToString(buf)
 }
 
 func getenv(key, fallback string) string {

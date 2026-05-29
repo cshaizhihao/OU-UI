@@ -7,6 +7,7 @@ import (
 	"github.com/cshaizhihao/OU-UI/internal/auth"
 	"github.com/cshaizhihao/OU-UI/internal/config"
 	"github.com/cshaizhihao/OU-UI/internal/models"
+	"github.com/cshaizhihao/OU-UI/internal/providers"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
@@ -16,11 +17,11 @@ func NewRouter(cfg config.ServerConfig, db *gorm.DB) *gin.Engine {
 	r := gin.New()
 	r.Use(gin.Logger(), gin.Recovery())
 
-	h := Handler{cfg: cfg, db: db}
+	h := Handler{cfg: cfg, db: db, registry: providers.DefaultRegistry()}
 
 	r.GET("/healthz", h.health)
 	r.GET("/", func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"name": "OU-UI", "version": "v0.3.0", "securePath": cfg.SecurePath})
+		c.JSON(http.StatusOK, gin.H{"name": "OU-UI", "version": "v0.4.0", "securePath": cfg.SecurePath})
 	})
 
 	root := r.Group(cfg.SecurePath)
@@ -78,7 +79,7 @@ func (h Handler) requireAgentAuth() gin.HandlerFunc {
 		agentID := c.Param("id")
 		var agent models.Agent
 		tokenHash := hashSecret(bearerToken(c))
-		if err := h.db.Select("agent_token_sha").Where("id = ?", agentID).First(&agent).Error; err != nil || tokenHash != agent.AgentTokenSHA {
+		if err := h.db.Select("agent_token_sha", "auth_status").Where("id = ?", agentID).First(&agent).Error; err != nil || tokenHash != agent.AgentTokenSHA || agent.AuthStatus == models.AgentAuthRevoked {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid agent token"})
 			return
 		}

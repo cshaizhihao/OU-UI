@@ -23,6 +23,7 @@ type Task struct {
 	Type    string         `json:"type"`
 	Status  string         `json:"status"`
 	Payload datatypes.JSON `json:"payload"`
+	Attempts int           `json:"attempts"`
 }
 
 type Result struct {

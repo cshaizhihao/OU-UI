@@ -21,8 +21,9 @@ import (
 )
 
 type Handler struct {
-	cfg config.ServerConfig
-	db  *gorm.DB
+	cfg      config.ServerConfig
+	db       *gorm.DB
+	registry provider.Registry
 }
 
 type loginRequest struct {
@@ -31,6 +32,7 @@ type loginRequest struct {
 }
 
 type registerAgentRequest struct {
+	InstallID    string                  `json:"installId"`
 	Name         string                  `json:"name"`
 	Version      string                  `json:"version"`
 	System       agentruntime.SystemInfo `json:"system"`
@@ -38,20 +40,23 @@ type registerAgentRequest struct {
 }
 
 type heartbeatRequest struct {
-	Status  string                      `json:"status"`
-	Metrics agentruntime.RuntimeMetrics `json:"metrics"`
+	Status    string                      `json:"status"`
+	Metrics   agentruntime.RuntimeMetrics `json:"metrics"`
+	LastError string                      `json:"lastError"`
 }
 
 type createTaskRequest struct {
-	AgentID string         `json:"agentId"`
-	Type    string         `json:"type"`
-	Payload map[string]any `json:"payload"`
+	AgentID     string         `json:"agentId"`
+	Type        string         `json:"type"`
+	Payload     map[string]any `json:"payload"`
+	MaxAttempts int            `json:"maxAttempts"`
 }
 
 type updateTaskRequest struct {
-	Status string         `json:"status"`
-	Result map[string]any `json:"result"`
-	Logs   string         `json:"logs"`
+	Status  string         `json:"status"`
+	Result  map[string]any `json:"result"`
+	Logs    string         `json:"logs"`
+	Attempt int            `json:"attempt"`
 }
 
 type createNodeRequest struct {
@@ -65,7 +70,7 @@ type createNodeRequest struct {
 }
 
 func (h Handler) health(c *gin.Context) {
-	c.JSON(http.StatusOK, gin.H{"ok": true, "version": "v0.3.0"})
+	c.JSON(http.StatusOK, gin.H{"ok": true, "version": "v0.4.0"})
 }
 
 func (h Handler) login(c *gin.Context) {
@@ -87,17 +92,25 @@ func (h Handler) login(c *gin.Context) {
 }
 
 func (h Handler) overview(c *gin.Context) {
-	var total int64
-	var online int64
+	var agents []models.Agent
 	var nodes int64
-	h.db.Model(&models.Agent{}).Count(&total)
-	h.db.Model(&models.Agent{}).Where("status = ?", "online").Count(&online)
+	if err := h.db.Find(&agents).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "query overview failed"})
+		return
+	}
 	h.db.Model(&models.Node{}).Count(&nodes)
+	var online int64
+	for i := range agents {
+		h.decorateAgent(&agents[i])
+		if agents[i].Status == models.AgentStatusOnline {
+			online++
+		}
+	}
 	c.JSON(http.StatusOK, gin.H{
-		"agentsTotal":  total,
+		"agentsTotal":  int64(len(agents)),
 		"agentsOnline": online,
 		"nodesTotal":   nodes,
-		"version":      "v0.3.0",
+		"version":      "v0.4.0",
 	})
 }
 
@@ -107,10 +120,18 @@ func (h Handler) listAgents(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "query agents failed"})
 		return
 	}
+	for i := range agents {
+		h.decorateAgent(&agents[i])
+	}
 	c.JSON(http.StatusOK, gin.H{"items": agents})
 }
 
 func (h Handler) agentInstallScript(c *gin.Context) {
+	c.Header("Content-Type", "text/x-shellscript; charset=utf-8")
+	c.String(http.StatusOK, h.renderAgentInstallScript(c))
+}
+
+func (h Handler) renderAgentInstallScript(c *gin.Context) string {
 	serverURL := strings.TrimRight(c.Query("serverUrl"), "/")
 	if serverURL == "" {
 		scheme := "http"
@@ -119,7 +140,8 @@ func (h Handler) agentInstallScript(c *gin.Context) {
 		}
 		serverURL = fmt.Sprintf("%s://%s%s", scheme, c.Request.Host, h.cfg.SecurePath)
 	}
-	script := fmt.Sprintf(`#!/usr/bin/env bash
+
+	return fmt.Sprintf(`#!/usr/bin/env bash
 set -Eeuo pipefail
 
 PANEL_URL=%q
@@ -127,29 +149,34 @@ JOIN_TOKEN=%q
 AGENT_NAME="${OUUI_AGENT_NAME:-$(hostname)}"
 INSTALL_DIR="${OUUI_AGENT_INSTALL_DIR:-/opt/ou-ui-agent}"
 DATA_DIR="${OUUI_AGENT_DATA_DIR:-/var/lib/ou-ui-agent}"
+ENV_FILE="/etc/ou-ui/agent.env"
 
-echo "OU-UI Agent 中文一键安装脚本"
-echo "主控地址：$PANEL_URL"
-echo "Agent 名称：$AGENT_NAME"
-
-if [[ "$(id -u)" -ne 0 ]]; then
-  echo "请使用 root 运行 Agent 安装脚本。" >&2
+fail() {
+  printf '[错误] %%s\n' "$1" >&2
   exit 1
-fi
+}
 
-mkdir -p "$INSTALL_DIR" "$DATA_DIR"
+printf 'OU-UI Agent 中文一键安装脚本\n'
+printf '主控地址：%%s\n' "$PANEL_URL"
+printf 'Agent 名称：%%s\n' "$AGENT_NAME"
+
+[[ "$(id -u)" -eq 0 ]] || fail "请使用 root 运行 Agent 安装脚本。"
+
+mkdir -p "$INSTALL_DIR" "$DATA_DIR" /etc/ou-ui
 chmod 700 "$DATA_DIR"
 
-cat >"$INSTALL_DIR/ou-ui-agent.env" <<EOF_ENV
+cat >"$ENV_FILE" <<EOF_ENV
 OUUI_SERVER_URL=$PANEL_URL
 OUUI_AGENT_JOIN_TOKEN=$JOIN_TOKEN
 OUUI_AGENT_NAME=$AGENT_NAME
 OUUI_AGENT_DATA_DIR=$DATA_DIR
 EOF_ENV
-chmod 600 "$INSTALL_DIR/ou-ui-agent.env"
+chmod 600 "$ENV_FILE"
 
-echo "v0.3.0 暂未发布预编译 Agent 二进制。"
-echo "请在源码目录执行：go build -o $INSTALL_DIR/ou-ui-agent ./apps/agent"
+if [[ ! -x "$INSTALL_DIR/ou-ui-agent" ]]; then
+  printf 'v0.4.0 暂未发布预编译 Agent 二进制。\n'
+  printf '请先在源码目录执行：go build -o %%s/ou-ui-agent ./apps/agent\n' "$INSTALL_DIR"
+fi
 
 cat >/etc/systemd/system/ou-ui-agent.service <<EOF_SERVICE
 [Unit]
@@ -159,7 +186,7 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-EnvironmentFile=$INSTALL_DIR/ou-ui-agent.env
+EnvironmentFile=$ENV_FILE
 ExecStart=$INSTALL_DIR/ou-ui-agent
 Restart=always
 RestartSec=5
@@ -170,10 +197,11 @@ WantedBy=multi-user.target
 EOF_SERVICE
 
 systemctl daemon-reload
-echo "Agent 配置已写入。二进制就绪后执行：systemctl enable --now ou-ui-agent"
+printf 'Agent 配置已写入。\n'
+printf '启动命令：systemctl enable --now ou-ui-agent\n'
+printf '查看状态：systemctl status ou-ui-agent --no-pager\n'
+printf '查看日志：journalctl -u ou-ui-agent -f\n'
 `, serverURL, h.cfg.AgentJoinToken)
-	c.Header("Content-Type", "text/x-shellscript; charset=utf-8")
-	c.String(http.StatusOK, script)
 }
 
 func (h Handler) registerAgent(c *gin.Context) {
@@ -185,16 +213,55 @@ func (h Handler) registerAgent(c *gin.Context) {
 	if req.Name == "" {
 		req.Name = req.System.Hostname
 	}
+	if req.InstallID == "" {
+		req.InstallID = "ins_" + randomHex(16)
+	}
 
-	agentID := "agt_" + randomHex(8)
 	agentToken := "oua_" + randomHex(24)
 	capabilities, _ := json.Marshal(req.Capabilities)
+	now := time.Now()
+
+	var existing models.Agent
+	err := h.db.Where("install_id = ?", req.InstallID).First(&existing).Error
+	if err == nil {
+		updates := map[string]any{
+			"name":            req.Name,
+			"version":         req.Version,
+			"status":          models.AgentStatusOnline,
+			"auth_status":     models.AgentAuthActive,
+			"hostname":        req.System.Hostname,
+			"os":              req.System.OS,
+			"arch":            req.System.Arch,
+			"kernel":          req.System.Kernel,
+			"cpu_model":       req.System.CPUModel,
+			"cpu_count":       req.System.CPUCount,
+			"memory_total":    req.System.MemoryTotal,
+			"swap_total":      req.System.SwapTotal,
+			"capabilities":    datatypes.JSON(capabilities),
+			"last_seen_at":    &now,
+			"last_error":      "",
+			"agent_token_sha": hashSecret(agentToken),
+		}
+		if err := h.db.Model(&models.Agent{}).Where("id = ?", existing.ID).Updates(updates).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "update agent failed"})
+			return
+		}
+		h.audit("agent", "reenroll", existing.ID, req.Name)
+		c.JSON(http.StatusOK, gin.H{"agentId": existing.ID, "agentToken": agentToken, "installId": req.InstallID})
+		return
+	}
+	if err != gorm.ErrRecordNotFound {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "query agent failed"})
+		return
+	}
 
 	agent := models.Agent{
-		ID:            agentID,
+		ID:            "agt_" + randomHex(8),
+		InstallID:     req.InstallID,
 		Name:          req.Name,
 		Version:       req.Version,
-		Status:        "online",
+		Status:        models.AgentStatusOnline,
+		AuthStatus:    models.AgentAuthActive,
 		Hostname:      req.System.Hostname,
 		OS:            req.System.OS,
 		Arch:          req.System.Arch,
@@ -204,18 +271,16 @@ func (h Handler) registerAgent(c *gin.Context) {
 		MemoryTotal:   req.System.MemoryTotal,
 		SwapTotal:     req.System.SwapTotal,
 		Capabilities:  datatypes.JSON(capabilities),
+		LastSeenAt:    &now,
 		AgentTokenSHA: hashSecret(agentToken),
 	}
-	now := time.Now()
-	agent.LastSeenAt = &now
 
 	if err := h.db.Create(&agent).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "create agent failed"})
 		return
 	}
-
 	h.audit("agent", "register", agent.ID, agent.Name)
-	c.JSON(http.StatusOK, gin.H{"agentId": agent.ID, "agentToken": agentToken})
+	c.JSON(http.StatusOK, gin.H{"agentId": agent.ID, "agentToken": agentToken, "installId": req.InstallID})
 }
 
 func (h Handler) agentHeartbeat(c *gin.Context) {
@@ -224,16 +289,18 @@ func (h Handler) agentHeartbeat(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request"})
 		return
 	}
-	if req.Status == "" {
-		req.Status = "online"
+	status := models.AgentStatusOnline
+	if req.Status == models.AgentStatusDegraded {
+		status = models.AgentStatusDegraded
 	}
 	metrics, _ := json.Marshal(req.Metrics)
 	now := time.Now()
 
 	if err := h.db.Model(&models.Agent{}).Where("id = ?", c.Param("id")).Updates(map[string]any{
-		"status":       req.Status,
+		"status":       status,
 		"last_metrics": datatypes.JSON(metrics),
 		"last_seen_at": &now,
+		"last_error":   strings.TrimSpace(req.LastError),
 	}).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "update heartbeat failed"})
 		return
@@ -242,10 +309,15 @@ func (h Handler) agentHeartbeat(c *gin.Context) {
 }
 
 func (h Handler) listTasks(c *gin.Context) {
+	h.expireLeases()
 	var tasks []models.Task
 	if err := h.db.Order("created_at desc").Find(&tasks).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "query tasks failed"})
 		return
+	}
+	for i := range tasks {
+		tasks[i].Payload = redactJSON(tasks[i].Payload)
+		tasks[i].Result = redactJSON(tasks[i].Result)
 	}
 	c.JSON(http.StatusOK, gin.H{"items": tasks})
 }
@@ -260,9 +332,13 @@ func (h Handler) createTask(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "unsupported task type"})
 		return
 	}
-	var agent models.Agent
-	if err := h.db.Select("id").Where("id = ?", req.AgentID).First(&agent).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "agent not found"})
+	requiredCapability := requiredCapabilityForTask(req.Type)
+	if _, err := h.dispatchableAgent(req.AgentID, requiredCapability); err != nil {
+		status := http.StatusBadRequest
+		if err == gorm.ErrRecordNotFound {
+			status = http.StatusNotFound
+		}
+		c.JSON(status, gin.H{"error": err.Error()})
 		return
 	}
 	if req.Payload == nil {
@@ -275,6 +351,7 @@ func (h Handler) createTask(c *gin.Context) {
 		Type:    req.Type,
 		Status:  models.TaskStatusQueued,
 		Payload: datatypes.JSON(payload),
+		MaxAttempts: normalizeMaxAttempts(req.MaxAttempts),
 	}
 	if err := h.db.Create(&task).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "create task failed"})
@@ -286,16 +363,20 @@ func (h Handler) createTask(c *gin.Context) {
 
 func (h Handler) agentNextTask(c *gin.Context) {
 	agentID := c.Param("id")
+	h.expireLeases()
 	var task models.Task
 	err := h.db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Where("agent_id = ? AND status = ?", agentID, models.TaskStatusQueued).Order("created_at asc").First(&task).Error; err != nil {
 			return err
 		}
 		now := time.Now()
+		leaseExpiresAt := now.Add(h.cfg.TaskTimeout())
 		result := tx.Model(&models.Task{}).Where("id = ? AND status = ?", task.ID, models.TaskStatusQueued).Updates(map[string]any{
-			"status":     models.TaskStatusRunning,
-			"attempts":   task.Attempts + 1,
-			"started_at": &now,
+			"status":           models.TaskStatusRunning,
+			"attempts":         task.Attempts + 1,
+			"started_at":       &now,
+			"finished_at":      nil,
+			"lease_expires_at": &leaseExpiresAt,
 		})
 		if result.Error != nil {
 			return result.Error
@@ -332,41 +413,45 @@ func (h Handler) agentUpdateTask(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "unsupported status"})
 		return
 	}
+	if req.Attempt <= 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "attempt is required"})
+		return
+	}
 	result, _ := json.Marshal(req.Result)
 	updates := map[string]any{
-		"status": req.Status,
-		"result": datatypes.JSON(result),
-		"logs":   req.Logs,
+		"status":           req.Status,
+		"result":           datatypes.JSON(result),
+		"logs":             req.Logs,
+		"lease_expires_at": nil,
 	}
 	if req.Status == models.TaskStatusRunning {
 		now := time.Now()
 		updates["started_at"] = &now
+		leaseExpiresAt := now.Add(h.cfg.TaskTimeout())
+		updates["lease_expires_at"] = &leaseExpiresAt
 	}
 	if models.IsTerminalTaskStatus(req.Status) {
 		now := time.Now()
 		updates["finished_at"] = &now
+	}
+	if req.Status == models.TaskStatusFailed {
+		updates["last_error"] = extractResultError(req.Result, req.Logs)
 	}
 	var task models.Task
 	if err := h.db.Where("id = ? AND agent_id = ?", c.Param("taskId"), c.Param("id")).First(&task).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "task not found"})
 		return
 	}
-	if err := h.db.Model(&models.Task{}).Where("id = ? AND agent_id = ?", c.Param("taskId"), c.Param("id")).Updates(updates).Error; err != nil {
+	update := h.db.Model(&models.Task{}).Where("id = ? AND agent_id = ? AND status = ? AND attempts = ?", c.Param("taskId"), c.Param("id"), models.TaskStatusRunning, req.Attempt).Updates(updates)
+	if update.Error != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "update task failed"})
 		return
 	}
-	if task.Type == models.TaskTypeNodeDeploy && models.IsTerminalTaskStatus(req.Status) {
-		var payload struct {
-			NodeID string `json:"nodeId"`
-		}
-		if err := json.Unmarshal(task.Payload, &payload); err == nil && payload.NodeID != "" {
-			nodeStatus := "deployed"
-			if req.Status == models.TaskStatusFailed {
-				nodeStatus = "failed"
-			}
-			_ = h.db.Model(&models.Node{}).Where("id = ?", payload.NodeID).Update("status", nodeStatus).Error
-		}
+	if update.RowsAffected == 0 {
+		c.JSON(http.StatusConflict, gin.H{"error": "task state changed; update rejected"})
+		return
 	}
+	h.syncNodeStatusForTask(task, req.Status)
 	h.audit("agent", "task.update", task.ID, req.Status)
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
@@ -376,6 +461,9 @@ func (h Handler) listNodes(c *gin.Context) {
 	if err := h.db.Order("updated_at desc").Find(&nodes).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "query nodes failed"})
 		return
+	}
+	for i := range nodes {
+		nodes[i].Spec = redactJSON(nodes[i].Spec)
 	}
 	c.JSON(http.StatusOK, gin.H{"items": nodes})
 }
@@ -402,6 +490,30 @@ func (h Handler) createNode(c *gin.Context) {
 		"port":     req.Port,
 		"settings": req.Settings,
 	}
+	nodeSpec := provider.NodeSpec{
+		Runtime:  runtimeName,
+		Protocol: protocolName,
+		Listen:   req.Listen,
+		Port:     req.Port,
+		Settings: req.Settings,
+	}
+	runtimeProvider, ok := h.registry.Get(runtimeName)
+	if !ok {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "unsupported runtime"})
+		return
+	}
+	if err := runtimeProvider.Validate(nodeSpec); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if _, err := h.dispatchableAgent(req.AgentID, requiredCapabilityForSpec(nodeSpec)); err != nil {
+		status := http.StatusBadRequest
+		if err == gorm.ErrRecordNotFound {
+			status = http.StatusNotFound
+		}
+		c.JSON(status, gin.H{"error": err.Error()})
+		return
+	}
 	specJSON, _ := json.Marshal(spec)
 	nodeID := "nod_" + randomHex(8)
 	taskID := "tsk_" + randomHex(8)
@@ -422,6 +534,7 @@ func (h Handler) createNode(c *gin.Context) {
 		Type:    models.TaskTypeNodeDeploy,
 		Status:  models.TaskStatusQueued,
 		Payload: datatypes.JSON(taskPayload),
+		MaxAttempts: 2,
 	}
 	if err := h.db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Create(&node).Error; err != nil {
@@ -434,6 +547,211 @@ func (h Handler) createNode(c *gin.Context) {
 	}
 	h.audit("panel", "node.create", node.ID, node.Name)
 	c.JSON(http.StatusOK, gin.H{"node": node, "task": task})
+}
+
+func (h Handler) decorateAgent(agent *models.Agent) {
+	if agent.AuthStatus == "" {
+		agent.AuthStatus = models.AgentAuthActive
+	}
+	if agent.AuthStatus == models.AgentAuthRevoked {
+		agent.Status = models.AgentStatusOffline
+		agent.Stale = true
+		return
+	}
+	if agent.LastSeenAt == nil {
+		agent.Status = models.AgentStatusOffline
+		agent.Stale = true
+		return
+	}
+	age := time.Since(*agent.LastSeenAt)
+	if age > h.cfg.AgentOfflineAfter() {
+		agent.Status = models.AgentStatusOffline
+		agent.Stale = true
+	} else if age > h.cfg.AgentOfflineAfter()/2 && agent.Status == models.AgentStatusOnline {
+		agent.Status = models.AgentStatusDegraded
+	} else if agent.Status == "" {
+		agent.Status = models.AgentStatusOnline
+	}
+
+	var queue int64
+	_ = h.db.Model(&models.Task{}).Where("agent_id = ? AND status IN ?", agent.ID, []string{models.TaskStatusQueued, models.TaskStatusRunning}).Count(&queue).Error
+	agent.QueueCount = int(queue)
+}
+
+func (h Handler) dispatchableAgent(agentID string, requiredCapability string) (models.Agent, error) {
+	var agent models.Agent
+	if err := h.db.Where("id = ?", agentID).First(&agent).Error; err != nil {
+		return agent, err
+	}
+	h.decorateAgent(&agent)
+	if agent.AuthStatus != "" && agent.AuthStatus != models.AgentAuthActive {
+		return agent, fmt.Errorf("agent auth status is %s", agent.AuthStatus)
+	}
+	if agent.Status == models.AgentStatusOffline {
+		return agent, fmt.Errorf("agent is offline")
+	}
+	if !agentHasCapability(agent, tasksCapabilityPolling) {
+		return agent, fmt.Errorf("agent does not support task polling")
+	}
+	if requiredCapability != "" && !agentHasCapability(agent, requiredCapability) {
+		return agent, fmt.Errorf("agent does not support capability %s", requiredCapability)
+	}
+	return agent, nil
+}
+
+func (h Handler) expireLeases() {
+	now := time.Now()
+	var expired []models.Task
+	if err := h.db.Where("status = ? AND lease_expires_at IS NOT NULL AND lease_expires_at < ?", models.TaskStatusRunning, now).Find(&expired).Error; err != nil {
+		return
+	}
+	for _, task := range expired {
+		maxAttempts := task.MaxAttempts
+		if maxAttempts <= 0 {
+			maxAttempts = 2
+		}
+		lastError := "task lease expired at " + now.UTC().Format(time.RFC3339)
+		updates := map[string]any{
+			"lease_expires_at": nil,
+			"last_error":       lastError,
+		}
+		if task.Attempts < maxAttempts {
+			updates["status"] = models.TaskStatusQueued
+			updates["started_at"] = nil
+		} else {
+			updates["status"] = models.TaskStatusFailed
+			updates["finished_at"] = &now
+		}
+		update := h.db.Model(&models.Task{}).Where("id = ? AND status = ?", task.ID, models.TaskStatusRunning).Updates(updates)
+		if update.Error == nil && update.RowsAffected > 0 && task.Attempts >= maxAttempts {
+			h.syncNodeStatusForTask(task, models.TaskStatusFailed)
+		}
+	}
+}
+
+func (h Handler) syncNodeStatusForTask(task models.Task, status string) {
+	if task.Type != models.TaskTypeNodeDeploy || !models.IsTerminalTaskStatus(status) {
+		return
+	}
+	var payload struct {
+		NodeID string `json:"nodeId"`
+	}
+	if err := json.Unmarshal(task.Payload, &payload); err != nil || payload.NodeID == "" {
+		return
+	}
+	nodeStatus := "deployed"
+	if status == models.TaskStatusFailed {
+		nodeStatus = "failed"
+	}
+	_ = h.db.Model(&models.Node{}).Where("id = ?", payload.NodeID).Update("status", nodeStatus).Error
+}
+
+func normalizeMaxAttempts(value int) int {
+	if value <= 0 {
+		return 2
+	}
+	if value > 5 {
+		return 5
+	}
+	return value
+}
+
+const tasksCapabilityPolling = "task-polling"
+
+func requiredCapabilityForTask(taskType string) string {
+	switch taskType {
+	case models.TaskTypeNoop:
+		return models.TaskTypeNoop
+	case models.TaskTypeRuntimeStatus:
+		return models.TaskTypeRuntimeStatus
+	default:
+		return ""
+	}
+}
+
+func requiredCapabilityForSpec(spec provider.NodeSpec) string {
+	switch spec.Runtime {
+	case provider.RuntimeXray:
+		return "xray.render"
+	case provider.RuntimeHysteria2:
+		return "hysteria2.render"
+	default:
+		return ""
+	}
+}
+
+func agentHasCapability(agent models.Agent, required string) bool {
+	if required == "" {
+		return true
+	}
+	var capabilities []string
+	if err := json.Unmarshal(agent.Capabilities, &capabilities); err != nil {
+		return false
+	}
+	for _, capability := range capabilities {
+		if strings.EqualFold(strings.TrimSpace(capability), required) {
+			return true
+		}
+	}
+	return false
+}
+
+func redactJSON(raw datatypes.JSON) datatypes.JSON {
+	if len(raw) == 0 {
+		return raw
+	}
+	var value any
+	if err := json.Unmarshal(raw, &value); err != nil {
+		return raw
+	}
+	redacted, err := json.Marshal(redactValue(value))
+	if err != nil {
+		return raw
+	}
+	return datatypes.JSON(redacted)
+}
+
+func redactValue(value any) any {
+	switch typed := value.(type) {
+	case map[string]any:
+		out := make(map[string]any, len(typed))
+		for key, item := range typed {
+			if isSensitiveKey(key) {
+				out[key] = "[redacted]"
+				continue
+			}
+			out[key] = redactValue(item)
+		}
+		return out
+	case []any:
+		out := make([]any, 0, len(typed))
+		for _, item := range typed {
+			out = append(out, redactValue(item))
+		}
+		return out
+	default:
+		return typed
+	}
+}
+
+func isSensitiveKey(key string) bool {
+	normalized := strings.ToLower(strings.ReplaceAll(key, "_", ""))
+	for _, marker := range []string{"password", "secret", "token", "privatekey", "uuid"} {
+		if strings.Contains(normalized, marker) {
+			return true
+		}
+	}
+	return false
+}
+
+func extractResultError(result map[string]any, logs string) string {
+	if value, ok := result["error"]; ok {
+		return fmt.Sprint(value)
+	}
+	if value, ok := result["stage"]; ok {
+		return fmt.Sprint(value)
+	}
+	return strings.TrimSpace(logs)
 }
 
 func (h Handler) audit(actor, action, target, detail string) {

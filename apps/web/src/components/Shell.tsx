@@ -33,7 +33,7 @@ export function Shell({ children }: ShellProps) {
           ))}
         </nav>
         <div className="sidebar-footer">
-          <span>v0.3.0</span>
+          <span>v0.4.0</span>
           <strong>Control plane online</strong>
         </div>
       </aside>
