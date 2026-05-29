@@ -441,7 +441,8 @@ td span:not(.status):not(.task-state):not(.runtime-stage):not(.capability-chip):
 
 .control-summary > div,
 .agent-task-summary,
-.runtime-apply-summary {
+.runtime-apply-summary,
+.host-tuning-summary {
   min-width: 0;
   border: 1px solid #e2e8f0;
   border-radius: 8px;
@@ -486,12 +487,14 @@ td span:not(.status):not(.task-state):not(.runtime-stage):not(.capability-chip):
   grid-column: 1 / -1;
 }
 
-.runtime-apply-summary {
+.runtime-apply-summary,
+.host-tuning-summary {
   display: grid;
   gap: 10px;
 }
 
-.runtime-apply-head {
+.runtime-apply-head,
+.host-tuning-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -499,10 +502,13 @@ td span:not(.status):not(.task-state):not(.runtime-stage):not(.capability-chip):
 }
 
 .runtime-apply-head > div,
+.host-tuning-head > div,
 .runtime-apply-meta > div,
+.host-tuning-meta > div,
 .runtime-control-signals > div,
 .runtime-cell,
 .config-cell,
+.host-tuning-cell,
 .task-runtime-detail > div {
   display: grid;
   min-width: 0;
@@ -510,10 +516,13 @@ td span:not(.status):not(.task-state):not(.runtime-stage):not(.capability-chip):
 }
 
 .runtime-apply-head strong,
+.host-tuning-head strong,
 .runtime-apply-meta strong,
+.host-tuning-meta strong,
 .runtime-control-signals strong,
 .runtime-cell strong,
 .config-cell strong,
+.host-tuning-cell strong,
 .task-runtime-detail strong {
   overflow: hidden;
   color: #0f172a;
@@ -528,8 +537,36 @@ td span:not(.status):not(.task-state):not(.runtime-stage):not(.capability-chip):
   gap: 8px;
 }
 
-.runtime-apply-meta .failure-stage {
+.host-tuning-meta {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.runtime-apply-meta .failure-stage,
+.host-tuning-meta .failure-stage {
   grid-column: 1 / -1;
+}
+
+.host-tune-pipeline {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.host-tune-pipeline.compact {
+  width: 204px;
+  grid-template-columns: repeat(6, 28px);
+}
+
+.host-tuning-cell {
+  min-width: 230px;
+}
+
+.host-tuning-cell-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .runtime-control-signals {
@@ -1011,7 +1048,7 @@ meter {
 
 table {
   width: 100%;
-  min-width: 1780px;
+  min-width: 2020px;
   border-collapse: collapse;
 }
 
@@ -1099,6 +1136,7 @@ td span {
   .control-summary,
   .agent-task-summary,
   .runtime-apply-meta,
+  .host-tuning-meta,
   .runtime-control-signals,
   .task-runtime-detail {
     grid-template-columns: 1fr;

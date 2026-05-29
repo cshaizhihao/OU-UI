@@ -11,6 +11,7 @@ import (
 	"github.com/cshaizhihao/OU-UI/internal/models"
 	"github.com/cshaizhihao/OU-UI/internal/provider"
 	"github.com/cshaizhihao/OU-UI/internal/providers"
+	"github.com/cshaizhihao/OU-UI/internal/tuning"
 	"gorm.io/datatypes"
 )
 
@@ -62,10 +63,12 @@ func (e Executor) Execute(task Task) Result {
 	case models.TaskTypeRuntimeStatus:
 		return Result{Status: models.TaskStatusSucceeded, Result: map[string]any{
 			"metrics":      agentruntime.CollectRuntimeMetrics(),
-			"capabilities": []string{"monitoring", CapabilityTaskPolling, models.TaskTypeNoop, models.TaskTypeRuntimeStatus, "xray.render", "xray.deploy", "xray.service", "hysteria2.render", "hysteria2.deploy", "hysteria2.service"},
+			"capabilities": []string{"monitoring", CapabilityTaskPolling, models.TaskTypeNoop, models.TaskTypeRuntimeStatus, tuning.CapabilityHostOptimize, "xray.render", "xray.deploy", "xray.service", "hysteria2.render", "hysteria2.deploy", "hysteria2.service"},
 		}, Logs: "runtime status collected"}
 	case models.TaskTypeNodeDeploy:
 		return e.deployNode(task)
+	case models.TaskTypeHostOptimize:
+		return e.optimizeHost(task)
 	default:
 		return Result{Status: models.TaskStatusFailed, Result: map[string]any{"error": "unsupported task type"}, Logs: "unsupported task type: " + task.Type}
 	}
@@ -210,4 +213,36 @@ func errorString(err error) string {
 		return ""
 	}
 	return err.Error()
+}
+
+func (e Executor) optimizeHost(task Task) Result {
+	var req tuning.Request
+	if len(task.Payload) > 0 {
+		if err := json.Unmarshal(task.Payload, &req); err != nil {
+			return failed("decode host optimize payload", err)
+		}
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+	optimizer := tuning.Optimizer{
+		Runner: deploy.OSRunner{Timeout: 2 * time.Minute, MaxOutputBytes: 4096},
+		DataDir: e.DataDir,
+	}
+	result, err := optimizer.Optimize(ctx, req)
+	payload := map[string]any{}
+	content, _ := json.Marshal(result)
+	_ = json.Unmarshal(content, &payload)
+	if err != nil {
+		payload["error"] = err.Error()
+		return Result{
+			Status: models.TaskStatusFailed,
+			Result: payload,
+			Logs:   "host network optimization failed: " + err.Error(),
+		}
+	}
+	return Result{
+		Status: models.TaskStatusSucceeded,
+		Result: payload,
+		Logs:   "host network optimization completed",
+	}
 }

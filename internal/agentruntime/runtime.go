@@ -32,6 +32,18 @@ type RuntimeMetrics struct {
 	NetRxRateBps  uint64  `json:"netRxRateBps"`
 	NetTxRateBps  uint64  `json:"netTxRateBps"`
 	CollectedAt   string  `json:"collectedAt"`
+	NodeTraffic   []NodeTrafficMetric `json:"nodeTraffic"`
+}
+
+type NodeTrafficMetric struct {
+	NodeID      string `json:"nodeId"`
+	Name        string `json:"name"`
+	RxBytes     uint64 `json:"rxBytes"`
+	TxBytes     uint64 `json:"txBytes"`
+	RxRateBps   uint64 `json:"rxRateBps"`
+	TxRateBps   uint64 `json:"txRateBps"`
+	Connections int    `json:"connections"`
+	CollectedAt string `json:"collectedAt"`
 }
 
 type Sampler struct {

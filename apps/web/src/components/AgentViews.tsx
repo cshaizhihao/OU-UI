@@ -1,4 +1,5 @@
 import {
+  getAgentHostTuning,
   getAgentRuntimeApply,
   getAgentTaskState,
   getAuthState,
@@ -6,11 +7,19 @@ import {
   getRegistrationState,
   getRuntimeCapabilities,
   getRuntimeLabel,
+  hostTuneStageLabel,
   runtimeApplyStageLabel,
   type ControlBadgeState,
+  type HostTuningView,
   type RuntimeApplyView
 } from "../controlFields";
-import type { Agent, AgentStatus, ControlTaskStatus, RuntimeApplyStage } from "../data";
+import type {
+  Agent,
+  AgentStatus,
+  ControlTaskStatus,
+  HostTuneStage,
+  RuntimeApplyStage
+} from "../data";
 import type { ReactNode } from "react";
 
 const statusLabel: Record<AgentStatus, string> = {
@@ -49,6 +58,7 @@ export function AgentCards({ agents }: AgentViewsProps) {
           const capabilities = getRuntimeCapabilities(agent);
           const task = getAgentTaskState(agent);
           const runtimeApply = getAgentRuntimeApply(agent);
+          const hostTuning = getAgentHostTuning(agent);
 
           return (
             <article className="agent-card" key={agent.id}>
@@ -82,6 +92,7 @@ export function AgentCards({ agents }: AgentViewsProps) {
               </div>
 
               <RuntimeServiceSummary apply={runtimeApply} />
+              <HostTuningSummary tuning={hostTuning} />
 
               <div className="agent-task-summary">
                 <div>
@@ -140,6 +151,7 @@ export function AgentTable({ agents }: AgentViewsProps) {
               <th>Control</th>
               <th>Runtime</th>
               <th>Control stages</th>
+              <th>Host tuning</th>
               <th>Unit / config</th>
               <th>Service actions</th>
               <th>Capabilities</th>
@@ -160,6 +172,7 @@ export function AgentTable({ agents }: AgentViewsProps) {
               const capabilities = getRuntimeCapabilities(agent);
               const task = getAgentTaskState(agent);
               const runtimeApply = getAgentRuntimeApply(agent);
+              const hostTuning = getAgentHostTuning(agent);
 
               return (
                 <tr key={agent.id}>
@@ -188,6 +201,9 @@ export function AgentTable({ agents }: AgentViewsProps) {
                   <td>
                     <RuntimeApplyPipeline apply={runtimeApply} compact />
                     <RuntimeFailureStage stage={runtimeApply.failureStage} />
+                  </td>
+                  <td>
+                    <HostTuningTableCell tuning={hostTuning} />
                   </td>
                   <td>
                     <div className="config-cell">
@@ -280,6 +296,80 @@ export function RuntimeApplyPipeline({
   );
 }
 
+function HostTuningSummary({ tuning }: { tuning: HostTuningView }) {
+  return (
+    <div className="host-tuning-summary">
+      <div className="host-tuning-head">
+        <div>
+          <span>Host tuning / Network optimization</span>
+          <strong>{hostTuneStageLabel[tuning.currentStage]}</strong>
+        </div>
+        <TaskStatePill status={tuning.status} />
+      </div>
+      <HostTunePipeline tuning={tuning} />
+      <div className="host-tuning-meta">
+        <RuntimeMeta label="BBR" value={`${tuning.bbrStatus} / ${tuning.bbrVersion}`} />
+        <RuntimeMeta label="Sysctl profile" value={tuning.sysctlProfile} />
+        <RuntimeMeta label="Kernel" value={tuning.kernelVersion} />
+        <RuntimeMeta
+          label="Congestion"
+          value={`${tuning.currentCongestionControl} -> ${tuning.targetCongestionControl}`}
+        />
+        <RuntimeMeta label="Reboot" value={tuning.rebootRequired ? "Required" : "Not required"} />
+        <RuntimeMeta label="One-click task" value={`${tuning.taskId} / ${tuning.eta}`} />
+        <HostTuneFailureStage stage={tuning.failureStage} />
+      </div>
+    </div>
+  );
+}
+
+function HostTuningTableCell({ tuning }: { tuning: HostTuningView }) {
+  return (
+    <div className="host-tuning-cell">
+      <div className="host-tuning-cell-head">
+        <TaskStatePill status={tuning.status} />
+        <span>{tuning.rebootRequired ? "Reboot required" : "No reboot"}</span>
+      </div>
+      <HostTunePipeline tuning={tuning} compact />
+      <span>{tuning.bbrStatus}</span>
+      <span>{tuning.sysctlProfile}</span>
+      <span>
+        {tuning.taskId} / {tuning.eta}
+      </span>
+      <strong title={tuning.kernelVersion}>{tuning.kernelVersion}</strong>
+      <span>
+        {tuning.currentCongestionControl} -&gt; {tuning.targetCongestionControl}
+      </span>
+      <HostTuneFailureStage stage={tuning.failureStage} />
+    </div>
+  );
+}
+
+function HostTunePipeline({
+  tuning,
+  compact = false
+}: {
+  tuning: HostTuningView;
+  compact?: boolean;
+}) {
+  return (
+    <div
+      className={`host-tune-pipeline${compact ? " compact" : ""}`}
+      aria-label="Host tuning stages"
+    >
+      {tuning.phases.map((phase) => (
+        <span
+          className={`runtime-stage runtime-stage-${phase.status}`}
+          key={phase.stage}
+          title={`${hostTuneStageLabel[phase.stage]} ${phase.status}`}
+        >
+          {compact ? hostTuneStageLabel[phase.stage].slice(0, 1) : hostTuneStageLabel[phase.stage]}
+        </span>
+      ))}
+    </div>
+  );
+}
+
 function RuntimeServiceSummary({ apply }: { apply: RuntimeApplyView }) {
   return (
     <div className="runtime-apply-summary">
@@ -359,6 +449,18 @@ function RuntimeFailureStage({ stage }: { stage?: RuntimeApplyStage }) {
   return (
     <span className="failure-stage">
       Failed at {runtimeApplyStageLabel[stage]}
+    </span>
+  );
+}
+
+function HostTuneFailureStage({ stage }: { stage?: HostTuneStage }) {
+  if (!stage) {
+    return null;
+  }
+
+  return (
+    <span className="failure-stage">
+      Failed at {hostTuneStageLabel[stage]}
     </span>
   );
 }

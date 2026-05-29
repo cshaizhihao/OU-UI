@@ -151,6 +151,59 @@ export type AgentControlTask = {
   attempts?: number;
 };
 
+export type HostTuneStage =
+  | "detect"
+  | "apply"
+  | "sysctl"
+  | "bbr"
+  | "install"
+  | "verify";
+
+export type HostTunePhase = {
+  stage?: HostTuneStage | string;
+  name?: HostTuneStage | string;
+  phase?: HostTuneStage | string;
+  status?: ControlTaskStatus | LegacyTaskStatus | string;
+  state?: ControlTaskStatus | LegacyTaskStatus | string;
+};
+
+export type HostTuningSnapshot = {
+  taskId?: string;
+  task_id?: string;
+  status?: ControlTaskStatus | LegacyTaskStatus | string;
+  state?: ControlTaskStatus | LegacyTaskStatus | string;
+  currentStage?: HostTuneStage | string;
+  current_stage?: HostTuneStage | string;
+  stage?: HostTuneStage | string;
+  failureStage?: HostTuneStage | string;
+  failure_stage?: HostTuneStage | string;
+  failedStage?: HostTuneStage | string;
+  failed_stage?: HostTuneStage | string;
+  bbrStatus?: string;
+  bbr_status?: string;
+  bbrVersion?: string;
+  bbr_version?: string;
+  sysctlProfile?: string;
+  sysctl_profile?: string;
+  rebootRequired?: boolean | string | number;
+  reboot_required?: boolean | string | number;
+  kernel?: string;
+  kernelVersion?: string;
+  kernel_version?: string;
+  currentCongestionControl?: string;
+  current_congestion_control?: string;
+  congestionControl?: string;
+  congestion_control?: string;
+  targetCongestionControl?: string;
+  target_congestion_control?: string;
+  eta?: string;
+  updatedAt?: string;
+  updated_at?: string;
+  phases?: HostTunePhase[];
+  stages?: HostTunePhase[];
+  steps?: HostTunePhase[];
+};
+
 export type Agent = {
   id: string;
   name: string;
@@ -246,6 +299,10 @@ export type Agent = {
   retryCount?: number;
   retry_count?: number;
   retries?: number;
+  hostTuning?: HostTuningSnapshot;
+  host_tuning?: HostTuningSnapshot;
+  networkOptimization?: HostTuningSnapshot;
+  network_optimization?: HostTuningSnapshot;
 };
 
 export type DeployTask = {
@@ -372,6 +429,28 @@ export const agents: Agent[] = [
       status: "running",
       currentStage: "reload",
       retryCount: 0
+    },
+    hostTuning: {
+      taskId: "tune-91021",
+      status: "running",
+      currentStage: "bbr",
+      bbrStatus: "BBR v3 candidate active",
+      bbrVersion: "bbr3",
+      sysctlProfile: "edge-throughput-v3",
+      rebootRequired: false,
+      kernelVersion: "6.8.12-ou1",
+      currentCongestionControl: "bbr",
+      targetCongestionControl: "bbr",
+      eta: "48s",
+      updatedAt: "18s ago",
+      phases: [
+        { stage: "detect", status: "success" },
+        { stage: "apply", status: "success" },
+        { stage: "sysctl", status: "success" },
+        { stage: "bbr", status: "running" },
+        { stage: "install", status: "pending" },
+        { stage: "verify", status: "pending" }
+      ]
     }
   },
   {
@@ -430,6 +509,28 @@ export const agents: Agent[] = [
       status: "pending",
       currentStage: "render",
       retryCount: 1
+    },
+    networkOptimization: {
+      taskId: "tune-91022",
+      state: "pending",
+      currentStage: "detect",
+      bbrStatus: "BBR available",
+      bbrVersion: "bbr",
+      sysctlProfile: "udp-transit-balanced",
+      rebootRequired: false,
+      kernel: "6.6.28-cloud",
+      current_congestion_control: "cubic",
+      target_congestion_control: "bbr",
+      eta: "2m 10s",
+      updatedAt: "42s ago",
+      stages: [
+        { stage: "detect", status: "pending" },
+        { stage: "apply", status: "pending" },
+        { stage: "sysctl", status: "pending" },
+        { stage: "bbr", status: "pending" },
+        { stage: "install", status: "pending" },
+        { stage: "verify", status: "pending" }
+      ]
     }
   },
   {
@@ -491,6 +592,29 @@ export const agents: Agent[] = [
       failedStage: "health",
       failureReason: "Certificate chain precheck failed",
       retryCount: 2
+    },
+    hostTuning: {
+      task_id: "tune-91017",
+      status: "failed",
+      current_stage: "install",
+      failedStage: "install",
+      bbr_status: "BBR v3 module install blocked",
+      bbr_version: "bbr3",
+      sysctl_profile: "relay-low-latency",
+      reboot_required: true,
+      kernel_version: "5.15.0-107-generic",
+      congestion_control: "cubic",
+      targetCongestionControl: "bbr",
+      eta: "manual review",
+      updated_at: "2m ago",
+      phases: [
+        { stage: "detect", status: "success" },
+        { stage: "apply", status: "success" },
+        { stage: "sysctl", status: "success" },
+        { stage: "bbr", status: "success" },
+        { stage: "install", status: "failed" },
+        { stage: "verify", status: "pending" }
+      ]
     }
   },
   {
@@ -549,6 +673,28 @@ export const agents: Agent[] = [
       status: "success",
       currentStage: "rollback",
       retryCount: 0
+    },
+    host_tuning: {
+      taskId: "tune-90988",
+      status: "success",
+      currentStage: "verify",
+      bbrStatus: "BBR active",
+      bbrVersion: "bbr",
+      sysctlProfile: "maintenance-baseline",
+      rebootRequired: true,
+      kernelVersion: "6.1.82-lts",
+      currentCongestionControl: "bbr",
+      targetCongestionControl: "bbr",
+      eta: "done",
+      updatedAt: "maintenance window",
+      phases: [
+        { stage: "detect", status: "success" },
+        { stage: "apply", status: "success" },
+        { stage: "sysctl", status: "success" },
+        { stage: "bbr", status: "success" },
+        { stage: "install", status: "success" },
+        { stage: "verify", status: "success" }
+      ]
     }
   }
 ];

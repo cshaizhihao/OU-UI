@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 const navItems = [
   { label: "Overview", href: "#overview" },
   { label: "Agents", href: "#agents" },
+  { label: "Host Tuning", href: "#agents" },
   { label: "Service Control", href: "#deploy" },
   { label: "Queue", href: "#queue" },
   { label: "Metrics", href: "#metrics" },
@@ -33,7 +34,7 @@ export function Shell({ children }: ShellProps) {
           ))}
         </nav>
         <div className="sidebar-footer">
-          <span>v0.6.0</span>
+          <span>v1.1.0</span>
           <strong>Control plane online</strong>
         </div>
       </aside>

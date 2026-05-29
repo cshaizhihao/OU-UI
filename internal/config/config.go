@@ -19,6 +19,9 @@ type ServerConfig struct {
 	SecurePath     string
 	TLSCertFile    string
 	TLSKeyFile     string
+	LLMEndpoint    string
+	LLMAPIKey      string
+	LLMModel       string
 	AgentOfflineAfterSeconds int
 	TaskTimeoutSeconds       int
 }
@@ -40,6 +43,9 @@ func LoadServer() ServerConfig {
 		SecurePath:     securePath,
 		TLSCertFile:    os.Getenv("OUUI_TLS_CERT_FILE"),
 		TLSKeyFile:     os.Getenv("OUUI_TLS_KEY_FILE"),
+		LLMEndpoint:    os.Getenv("OUUI_LLM_ENDPOINT"),
+		LLMAPIKey:      os.Getenv("OUUI_LLM_API_KEY"),
+		LLMModel:       getenv("OUUI_LLM_MODEL", "gpt-4.1-mini"),
 		AgentOfflineAfterSeconds: getenvInt("OUUI_AGENT_OFFLINE_AFTER_SECONDS", 45),
 		TaskTimeoutSeconds:       getenvInt("OUUI_TASK_TIMEOUT_SECONDS", 300),
 	}

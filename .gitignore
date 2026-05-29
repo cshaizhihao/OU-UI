@@ -16,6 +16,7 @@ backups/
 node_modules/
 dist/
 build/
+tmp/
 .cache/
 
 .DS_Store

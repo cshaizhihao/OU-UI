@@ -17,6 +17,7 @@ import (
 
 	"github.com/cshaizhihao/OU-UI/internal/agentruntime"
 	"github.com/cshaizhihao/OU-UI/internal/tasks"
+	"github.com/cshaizhihao/OU-UI/internal/tuning"
 )
 
 type registerRequest struct {
@@ -133,7 +134,7 @@ func enroll(client *http.Client, serverURL, joinToken, agentName string, state a
 		Name:         agentName,
 		Version:      "v0.6.0",
 		System:       agentruntime.CollectSystemInfo(),
-		Capabilities: []string{"monitoring", tasks.CapabilityTaskPolling, "noop", "runtime.status", "xray.render", "xray.deploy", "xray.service", "hysteria2.render", "hysteria2.deploy", "hysteria2.service"},
+		Capabilities: []string{"monitoring", tasks.CapabilityTaskPolling, "noop", "runtime.status", tuning.CapabilityHostOptimize, "xray.render", "xray.deploy", "xray.service", "hysteria2.render", "hysteria2.deploy", "hysteria2.service"},
 	})
 	if err != nil {
 		return state, err

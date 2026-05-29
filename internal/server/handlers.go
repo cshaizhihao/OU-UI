@@ -15,6 +15,7 @@ import (
 	"github.com/cshaizhihao/OU-UI/internal/config"
 	"github.com/cshaizhihao/OU-UI/internal/models"
 	"github.com/cshaizhihao/OU-UI/internal/provider"
+	"github.com/cshaizhihao/OU-UI/internal/tuning"
 	"github.com/gin-gonic/gin"
 	"gorm.io/datatypes"
 	"gorm.io/gorm"
@@ -70,7 +71,7 @@ type createNodeRequest struct {
 }
 
 func (h Handler) health(c *gin.Context) {
-	c.JSON(http.StatusOK, gin.H{"ok": true, "version": "v0.6.0"})
+	c.JSON(http.StatusOK, gin.H{"ok": true, "version": "v3.0.0"})
 }
 
 func (h Handler) login(c *gin.Context) {
@@ -110,7 +111,7 @@ func (h Handler) overview(c *gin.Context) {
 		"agentsTotal":  int64(len(agents)),
 		"agentsOnline": online,
 		"nodesTotal":   nodes,
-		"version":      "v0.6.0",
+		"version":      "v3.0.0",
 	})
 }
 
@@ -309,6 +310,8 @@ func (h Handler) agentHeartbeat(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "update heartbeat failed"})
 		return
 	}
+	h.persistNodeTraffic(c.Param("id"), req.Metrics.NodeTraffic)
+	h.evaluateAgentAlerts(c.Param("id"), req.Metrics, strings.TrimSpace(req.LastError))
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
@@ -722,6 +725,10 @@ func requiredCapabilityForTask(taskType string, payload map[string]any) (string,
 			return "", fmt.Errorf("unsupported node.deploy runtime %q", spec.Runtime)
 		}
 		return capability, nil
+	case models.TaskTypeHostOptimize:
+		return tuning.CapabilityHostOptimize, nil
+	case models.TaskTypeRoutingApply:
+		return "routing.apply", nil
 	default:
 		return "", nil
 	}

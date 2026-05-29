@@ -2,6 +2,8 @@ import type {
   Agent,
   ControlTaskStatus,
   DeployTask,
+  HostTuneStage,
+  HostTuningSnapshot,
   RuntimeApplySnapshot,
   RuntimeApplyStage,
   RuntimeRef
@@ -46,6 +48,28 @@ export type RuntimeApplyView = {
   phases: RuntimeApplyPhaseView[];
 };
 
+export type HostTunePhaseView = {
+  stage: HostTuneStage;
+  status: ControlTaskStatus;
+};
+
+export type HostTuningView = {
+  taskId: string;
+  status: ControlTaskStatus;
+  currentStage: HostTuneStage;
+  bbrStatus: string;
+  bbrVersion: string;
+  sysctlProfile: string;
+  rebootRequired: boolean;
+  kernelVersion: string;
+  currentCongestionControl: string;
+  targetCongestionControl: string;
+  eta: string;
+  updatedAt: string;
+  failureStage?: HostTuneStage;
+  phases: HostTunePhaseView[];
+};
+
 export const runtimeApplyStages: RuntimeApplyStage[] = [
   "render",
   "install",
@@ -62,6 +86,24 @@ export const runtimeApplyStageLabel: Record<RuntimeApplyStage, string> = {
   reload: "Reload",
   health: "Health",
   rollback: "Rollback"
+};
+
+export const hostTuneStages: HostTuneStage[] = [
+  "detect",
+  "apply",
+  "sysctl",
+  "bbr",
+  "install",
+  "verify"
+];
+
+export const hostTuneStageLabel: Record<HostTuneStage, string> = {
+  detect: "Detect",
+  apply: "Apply",
+  sysctl: "Sysctl",
+  bbr: "BBR",
+  install: "Install",
+  verify: "Verify"
 };
 
 const taskStatusMap: Record<string, ControlTaskStatus> = {
@@ -113,6 +155,31 @@ const runtimeApplyStageMap: Record<string, RuntimeApplyStage> = {
   rollback: "rollback",
   roll_back: "rollback",
   revert: "rollback"
+};
+
+const hostTuneStageMap: Record<string, HostTuneStage> = {
+  apply: "apply",
+  apply_profile: "apply",
+  applyprofile: "apply",
+  bbr: "bbr",
+  bbr_v3: "bbr",
+  bbrv3: "bbr",
+  congestion: "bbr",
+  congestion_control: "bbr",
+  detect: "detect",
+  detection: "detect",
+  install: "install",
+  install_kernel: "install",
+  installkernel: "install",
+  kernel_install: "install",
+  kernelinstall: "install",
+  profile: "apply",
+  sysctl: "sysctl",
+  sysctl_profile: "sysctl",
+  sysctlprofile: "sysctl",
+  tune: "apply",
+  verify: "verify",
+  verification: "verify"
 };
 
 export function getRegistrationState(agent: Agent): ControlBadgeState {
@@ -636,6 +703,78 @@ export function getDeployRuntimeApply(task: DeployTask): RuntimeApplyView {
   };
 }
 
+export function getAgentHostTuning(agent: Agent): HostTuningView {
+  const tuning = pickHostTuningSnapshot(
+    agent.hostTuning,
+    agent.host_tuning,
+    agent.networkOptimization,
+    agent.network_optimization
+  );
+  const status = normalizeTaskStatus(
+    pickFirst(readField(tuning, "status"), readField(tuning, "state"))
+  );
+  const currentStage = normalizeHostTuneStage(
+    pickFirst(
+      readField(tuning, "currentStage"),
+      readField(tuning, "current_stage"),
+      readField(tuning, "stage")
+    ),
+    inferHostTuneStageFromStatus(status)
+  );
+  const failureStage = normalizeOptionalHostTuneStage(
+    pickFirst(
+      readField(tuning, "failureStage"),
+      readField(tuning, "failure_stage"),
+      readField(tuning, "failedStage"),
+      readField(tuning, "failed_stage")
+    )
+  );
+
+  return {
+    taskId:
+      pickString(readField(tuning, "taskId"), readField(tuning, "task_id")) ??
+      "tune-pending",
+    status,
+    currentStage,
+    bbrStatus:
+      pickString(readField(tuning, "bbrStatus"), readField(tuning, "bbr_status")) ??
+      "Not reported",
+    bbrVersion:
+      pickString(readField(tuning, "bbrVersion"), readField(tuning, "bbr_version")) ??
+      "Unknown",
+    sysctlProfile:
+      pickString(readField(tuning, "sysctlProfile"), readField(tuning, "sysctl_profile")) ??
+      "Default",
+    rebootRequired:
+      pickBoolean(readField(tuning, "rebootRequired"), readField(tuning, "reboot_required")) ??
+      false,
+    kernelVersion:
+      pickString(
+        readField(tuning, "kernelVersion"),
+        readField(tuning, "kernel_version"),
+        readField(tuning, "kernel")
+      ) ?? "Kernel unknown",
+    currentCongestionControl:
+      pickString(
+        readField(tuning, "currentCongestionControl"),
+        readField(tuning, "current_congestion_control"),
+        readField(tuning, "congestionControl"),
+        readField(tuning, "congestion_control")
+      ) ?? "unknown",
+    targetCongestionControl:
+      pickString(
+        readField(tuning, "targetCongestionControl"),
+        readField(tuning, "target_congestion_control")
+      ) ?? "bbr",
+    eta: pickString(readField(tuning, "eta")) ?? status,
+    updatedAt:
+      pickString(readField(tuning, "updatedAt"), readField(tuning, "updated_at")) ??
+      agent.updatedAt,
+    failureStage,
+    phases: getHostTunePhases(tuning, currentStage, status, failureStage)
+  };
+}
+
 export function getAgentTaskState(agent: Agent): ControlTaskView {
   const task = pickRecord(
     agent.controlTask,
@@ -783,6 +922,10 @@ function pickRuntimeApplySnapshot(...values: unknown[]): RuntimeApplySnapshot | 
   return pickRecord(...values) as RuntimeApplySnapshot | undefined;
 }
 
+function pickHostTuningSnapshot(...values: unknown[]): HostTuningSnapshot | undefined {
+  return pickRecord(...values) as HostTuningSnapshot | undefined;
+}
+
 function readField(value: unknown, key: string): unknown {
   return isRecord(value) ? value[key] : undefined;
 }
@@ -864,6 +1007,61 @@ function getRuntimeApplyPhases(
   }));
 }
 
+function getHostTunePhases(
+  tuning: HostTuningSnapshot | undefined,
+  currentStage: HostTuneStage,
+  status: ControlTaskStatus,
+  failureStage: HostTuneStage | undefined
+): HostTunePhaseView[] {
+  const explicitPhases = firstList(
+    readField(tuning, "phases"),
+    readField(tuning, "stages"),
+    readField(tuning, "steps")
+  );
+
+  if (explicitPhases) {
+    const normalized = explicitPhases
+      .map((phase) => {
+        const stage = normalizeOptionalHostTuneStage(
+          pickFirst(
+            readField(phase, "stage"),
+            readField(phase, "name"),
+            readField(phase, "phase")
+          )
+        );
+
+        if (!stage) {
+          return undefined;
+        }
+
+        return {
+          stage,
+          status: normalizeTaskStatus(
+            pickFirst(readField(phase, "status"), readField(phase, "state"))
+          )
+        };
+      })
+      .filter((phase): phase is HostTunePhaseView => Boolean(phase));
+
+    if (normalized.length > 0) {
+      return hostTuneStages.map((stage) => {
+        const explicit = normalized.find((phase) => phase.stage === stage);
+        return (
+          explicit ?? {
+            stage,
+            status: inferHostTuneStageStatus(stage, currentStage, status, failureStage)
+          }
+        );
+      });
+    }
+  }
+
+  return hostTuneStages.map((stage) => ({
+    stage,
+    status: inferHostTuneStageStatus(stage, currentStage, status, failureStage)
+  }));
+}
+
 function firstList(...values: unknown[]): unknown[] | undefined {
   for (const value of values) {
     if (Array.isArray(value)) {
@@ -878,6 +1076,10 @@ function normalizeApplyStage(value: unknown, fallback: RuntimeApplyStage): Runti
   return normalizeOptionalApplyStage(value) ?? fallback;
 }
 
+function normalizeHostTuneStage(value: unknown, fallback: HostTuneStage): HostTuneStage {
+  return normalizeOptionalHostTuneStage(value) ?? fallback;
+}
+
 function normalizeOptionalApplyStage(value: unknown): RuntimeApplyStage | undefined {
   const raw = pickString(value)
     ?.toLowerCase()
@@ -890,6 +1092,18 @@ function normalizeOptionalApplyStage(value: unknown): RuntimeApplyStage | undefi
   return runtimeApplyStageMap[raw] ?? undefined;
 }
 
+function normalizeOptionalHostTuneStage(value: unknown): HostTuneStage | undefined {
+  const raw = pickString(value)
+    ?.toLowerCase()
+    .replace(/[\s-]+/g, "_");
+
+  if (!raw) {
+    return undefined;
+  }
+
+  return hostTuneStageMap[raw] ?? undefined;
+}
+
 function inferStageFromStatus(status: ControlTaskStatus): RuntimeApplyStage {
   if (status === "success" || status === "failed") {
     return "health";
@@ -898,6 +1112,16 @@ function inferStageFromStatus(status: ControlTaskStatus): RuntimeApplyStage {
     return "apply";
   }
   return "render";
+}
+
+function inferHostTuneStageFromStatus(status: ControlTaskStatus): HostTuneStage {
+  if (status === "success" || status === "failed") {
+    return "verify";
+  }
+  if (status === "running") {
+    return "sysctl";
+  }
+  return "detect";
 }
 
 function inferStageStatus(
@@ -912,6 +1136,42 @@ function inferStageStatus(
 
   const currentIndex = runtimeApplyStages.indexOf(currentStage);
   const stageIndex = runtimeApplyStages.indexOf(stage);
+
+  if (status === "success") {
+    return stageIndex <= currentIndex ? "success" : "pending";
+  }
+
+  if (status === "failed") {
+    if (stageIndex < currentIndex) {
+      return "success";
+    }
+
+    return stageIndex === currentIndex ? "failed" : "pending";
+  }
+
+  if (status === "running") {
+    if (stageIndex < currentIndex) {
+      return "success";
+    }
+
+    return stageIndex === currentIndex ? "running" : "pending";
+  }
+
+  return stageIndex < currentIndex ? "success" : "pending";
+}
+
+function inferHostTuneStageStatus(
+  stage: HostTuneStage,
+  currentStage: HostTuneStage,
+  status: ControlTaskStatus,
+  failureStage: HostTuneStage | undefined
+): ControlTaskStatus {
+  if (failureStage === stage) {
+    return "failed";
+  }
+
+  const currentIndex = hostTuneStages.indexOf(currentStage);
+  const stageIndex = hostTuneStages.indexOf(stage);
 
   if (status === "success") {
     return stageIndex <= currentIndex ? "success" : "pending";

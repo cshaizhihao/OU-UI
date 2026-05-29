@@ -11,7 +11,24 @@ func Open(path string) (*gorm.DB, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := db.AutoMigrate(&models.Agent{}, &models.Task{}, &models.Node{}, &models.AuditLog{}); err != nil {
+	if err := db.AutoMigrate(
+		&models.Agent{},
+		&models.Task{},
+		&models.Node{},
+		&models.AuditLog{},
+		&models.NodeTrafficSample{},
+		&models.RoutingRule{},
+		&models.LoadBalancerGroup{},
+		&models.WebhookEndpoint{},
+		&models.AlertEvent{},
+		&models.ExternalSubscription{},
+		&models.ExternalNode{},
+		&models.ClashProfile{},
+		&models.Tenant{},
+		&models.PanelUser{},
+		&models.APIKey{},
+		&models.CopilotIncident{},
+	); err != nil {
 		return nil, err
 	}
 	return db, nil
