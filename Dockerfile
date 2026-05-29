@@ -1,6 +1,6 @@
 FROM node:22-alpine AS web-builder
 WORKDIR /src
-RUN corepack enable
+RUN corepack enable && corepack prepare pnpm@10.25.0 --activate
 COPY package.json pnpm-workspace.yaml tsconfig.base.json ./
 COPY apps/web/package.json apps/web/package.json
 RUN pnpm install --no-frozen-lockfile
