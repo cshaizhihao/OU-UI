@@ -58,6 +58,9 @@ type RollbackRequest struct {
 	Revision   string
 	ConfigPath string
 	BackupPath string
+	ConfigDir   string
+	UnitPath    string
+	ServiceName string
 	Runner     CommandRunner
 }
 
@@ -73,7 +76,12 @@ type StageResult struct {
 type ApplyResult struct {
 	StageResult
 	ConfigPath        string `json:"configPath,omitempty"`
+	ConfigDir         string `json:"configDir,omitempty"`
 	BackupPath        string `json:"backupPath,omitempty"`
+	UnitPath          string `json:"unitPath,omitempty"`
+	ServiceName       string `json:"serviceName,omitempty"`
+	ServiceMode       string `json:"serviceMode,omitempty"`
+	ManagedByOUUI     bool   `json:"managedByOuui"`
 	RollbackAvailable bool   `json:"rollbackAvailable"`
 }
 
@@ -82,6 +90,10 @@ type HealthResult struct {
 	OK             bool   `json:"ok"`
 	ServiceName    string `json:"serviceName,omitempty"`
 	ServiceStatus  string `json:"serviceStatus,omitempty"`
+	ConfigDir      string `json:"configDir,omitempty"`
+	UnitPath       string `json:"unitPath,omitempty"`
+	ServiceMode    string `json:"serviceMode,omitempty"`
+	ManagedByOUUI  bool   `json:"managedByOuui"`
 	Runtime        string `json:"runtime,omitempty"`
 	RuntimeVersion string `json:"runtimeVersion,omitempty"`
 	Listen         string `json:"listen,omitempty"`

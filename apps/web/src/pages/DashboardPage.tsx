@@ -55,9 +55,9 @@ export function DashboardPage() {
           <div className="section-heading">
             <div>
               <p className="eyebrow">Node Dispatch</p>
-              <h2>Runtime apply</h2>
+              <h2>Runtime service control</h2>
             </div>
-            <button className="primary-button">Enqueue</button>
+            <button className="primary-button">Queue control</button>
           </div>
           <form className="dispatch-form">
             <label>
@@ -93,9 +93,9 @@ export function DashboardPage() {
             <label>
               Task queue
               <select defaultValue="rolling">
-                <option value="rolling">Rolling delivery - keep active sessions</option>
-                <option value="immediate">Immediate delivery - reload runtime</option>
-                <option value="staged">Staged delivery - approval required</option>
+                <option value="rolling">Managed reload - keep active sessions</option>
+                <option value="immediate">Managed restart - maintenance window</option>
+                <option value="staged">External service - approval required</option>
               </select>
             </label>
           </form>
@@ -104,7 +104,7 @@ export function DashboardPage() {
               <span key={protocol}>{protocol}</span>
             ))}
           </div>
-          <div className="protocol-strip" aria-label="Runtime apply stages">
+          <div className="protocol-strip" aria-label="Runtime service control stages">
             {runtimeApplyStages.map((stage) => (
               <span key={stage}>{runtimeApplyStageLabel[stage]}</span>
             ))}
@@ -113,7 +113,7 @@ export function DashboardPage() {
 
         <section className="panel" id="queue">
           <div className="section-heading compact">
-            <h2>Runtime apply queue</h2>
+            <h2>Runtime service queue</h2>
             <button className="ghost-button">Pause queue</button>
           </div>
           <div className="task-list">
@@ -144,6 +144,8 @@ export function DashboardPage() {
                     <TaskStatePill status={taskState.status} />
                     <span>{runtimeApply.runtimeVersion}</span>
                     <span>{formatServiceStatus(runtimeApply.serviceStatus)}</span>
+                    <span>{formatServiceStatus(runtimeApply.serviceMode)} mode</span>
+                    <span>{runtimeApply.runtimeManaged ? "OU-UI managed" : "External service"}</span>
                     <span>
                       {runtimeApply.rollbackAvailable
                         ? "Rollback available"
@@ -153,12 +155,38 @@ export function DashboardPage() {
                   </div>
                   <div className="task-runtime-detail">
                     <div>
-                      <span>Apply stage</span>
+                      <span>Control stage</span>
                       <strong>{runtimeApplyStageLabel[runtimeApply.currentStage]}</strong>
+                    </div>
+                    <div>
+                      <span>Unit path</span>
+                      <strong title={runtimeApply.unitPath}>{runtimeApply.unitPath}</strong>
+                    </div>
+                    <div>
+                      <span>Config dir</span>
+                      <strong title={runtimeApply.configDir}>{runtimeApply.configDir}</strong>
                     </div>
                     <div>
                       <span>Config path</span>
                       <strong title={runtimeApply.configPath}>{runtimeApply.configPath}</strong>
+                    </div>
+                    <div>
+                      <span>Reload</span>
+                      <strong title={runtimeApply.reloadInfo}>
+                        {formatServiceStatus(runtimeApply.reloadStatus)}
+                      </strong>
+                    </div>
+                    <div>
+                      <span>Restart</span>
+                      <strong title={runtimeApply.restartInfo}>
+                        {formatServiceStatus(runtimeApply.restartStatus)}
+                      </strong>
+                    </div>
+                    <div>
+                      <span>Health</span>
+                      <strong title={runtimeApply.healthInfo}>
+                        {formatServiceStatus(runtimeApply.healthStatus)}
+                      </strong>
                     </div>
                   </div>
                   <RuntimeApplyPipeline apply={runtimeApply} />

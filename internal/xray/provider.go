@@ -21,11 +21,13 @@ var supportedProtocols = map[string]struct{}{
 }
 
 var xrayRuntime = deploy.RuntimeManager{
-	RuntimeName: "xray",
-	BinaryNames: []string{"xray", "xray-core"},
-	ServiceName: "xray",
-	ConfigExt:   "json",
-	TCPHealth:   true,
+	RuntimeName:   "xray",
+	BinaryNames:   []string{"xray", "xray-core"},
+	ServicePrefix: "ou-ui-xray",
+	ConfigExt:     "json",
+	TCPHealth:     true,
+	ServiceMode:   deploy.ServiceModeManagedNode,
+	CommandArgs:   []string{"run", "-config", "{configPath}"},
 }
 
 func (p Provider) Validate(spec provider.NodeSpec) error {

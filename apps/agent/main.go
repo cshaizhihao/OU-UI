@@ -131,9 +131,9 @@ func enroll(client *http.Client, serverURL, joinToken, agentName string, state a
 	reg, err := register(client, serverURL, joinToken, registerRequest{
 		InstallID:    state.InstallID,
 		Name:         agentName,
-		Version:      "v0.5.0",
+		Version:      "v0.6.0",
 		System:       agentruntime.CollectSystemInfo(),
-		Capabilities: []string{"monitoring", tasks.CapabilityTaskPolling, "noop", "runtime.status", "xray.render", "xray.deploy", "hysteria2.render", "hysteria2.deploy"},
+		Capabilities: []string{"monitoring", tasks.CapabilityTaskPolling, "noop", "runtime.status", "xray.render", "xray.deploy", "xray.service", "hysteria2.render", "hysteria2.deploy", "hysteria2.service"},
 	})
 	if err != nil {
 		return state, err

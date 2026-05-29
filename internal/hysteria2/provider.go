@@ -14,10 +14,12 @@ type Provider struct{}
 var _ provider.Provider = Provider{}
 
 var hysteriaRuntime = deploy.RuntimeManager{
-	RuntimeName: "hysteria2",
-	BinaryNames: []string{"hysteria", "hysteria2"},
-	ServiceName: "hysteria-server",
-	ConfigExt:   "yaml",
+	RuntimeName:   "hysteria2",
+	BinaryNames:   []string{"hysteria", "hysteria2"},
+	ServicePrefix: "ou-ui-hysteria2",
+	ConfigExt:     "yaml",
+	ServiceMode:   deploy.ServiceModeManagedNode,
+	CommandArgs:   []string{"server", "-c", "{configPath}"},
 }
 
 func NewProvider() Provider {

@@ -16,6 +16,7 @@ export type RuntimeServiceStatus =
   | "stopped"
   | "maintenance"
   | string;
+export type RuntimeServiceMode = "managed" | "external" | string;
 
 export type RuntimeApplyPhase = {
   stage?: RuntimeApplyStage | string;
@@ -41,6 +42,32 @@ export type RuntimeApplySnapshot = {
   serviceStatus?: RuntimeServiceStatus;
   service_status?: RuntimeServiceStatus;
   service?: RuntimeServiceStatus;
+  serviceMode?: RuntimeServiceMode;
+  service_mode?: RuntimeServiceMode;
+  mode?: RuntimeServiceMode;
+  runtimeManaged?: boolean | string | number;
+  runtime_managed?: boolean | string | number;
+  managedByOuUi?: boolean | string | number;
+  managedByOuui?: boolean | string | number;
+  managed_by_ou_ui?: boolean | string | number;
+  unitPath?: string;
+  unit_path?: string;
+  systemdUnitPath?: string;
+  systemd_unit_path?: string;
+  configDir?: string;
+  config_dir?: string;
+  reloadStatus?: string;
+  reload_status?: string;
+  reloadInfo?: string;
+  reload_info?: string;
+  restartStatus?: string;
+  restart_status?: string;
+  restartInfo?: string;
+  restart_info?: string;
+  healthStatus?: string;
+  health_status?: string;
+  healthInfo?: string;
+  health_info?: string;
   configPath?: string;
   config_path?: string;
   path?: string;
@@ -67,6 +94,25 @@ export type RuntimeRef =
       runtime_version?: string;
       serviceStatus?: RuntimeServiceStatus;
       service_status?: RuntimeServiceStatus;
+      serviceMode?: RuntimeServiceMode;
+      service_mode?: RuntimeServiceMode;
+      runtimeManaged?: boolean | string | number;
+      runtime_managed?: boolean | string | number;
+      managedByOuUi?: boolean | string | number;
+      managedByOuui?: boolean | string | number;
+      managed_by_ou_ui?: boolean | string | number;
+      unitPath?: string;
+      unit_path?: string;
+      systemdUnitPath?: string;
+      systemd_unit_path?: string;
+      configDir?: string;
+      config_dir?: string;
+      reloadStatus?: string;
+      reload_status?: string;
+      restartStatus?: string;
+      restart_status?: string;
+      healthStatus?: string;
+      health_status?: string;
       configPath?: string;
       config_path?: string;
       rollbackAvailable?: boolean | string | number;
@@ -155,6 +201,31 @@ export type Agent = {
   runtime_version?: string;
   serviceStatus?: RuntimeServiceStatus;
   service_status?: RuntimeServiceStatus;
+  serviceMode?: RuntimeServiceMode;
+  service_mode?: RuntimeServiceMode;
+  runtimeManaged?: boolean | string | number;
+  runtime_managed?: boolean | string | number;
+  managedByOuUi?: boolean | string | number;
+  managedByOuui?: boolean | string | number;
+  managed_by_ou_ui?: boolean | string | number;
+  unitPath?: string;
+  unit_path?: string;
+  systemdUnitPath?: string;
+  systemd_unit_path?: string;
+  configDir?: string;
+  config_dir?: string;
+  reloadStatus?: string;
+  reload_status?: string;
+  reloadInfo?: string;
+  reload_info?: string;
+  restartStatus?: string;
+  restart_status?: string;
+  restartInfo?: string;
+  restart_info?: string;
+  healthStatus?: string;
+  health_status?: string;
+  healthInfo?: string;
+  health_info?: string;
   configPath?: string;
   config_path?: string;
   rollbackAvailable?: boolean | string | number;
@@ -199,6 +270,31 @@ export type DeployTask = {
   runtime_version?: string;
   serviceStatus?: RuntimeServiceStatus;
   service_status?: RuntimeServiceStatus;
+  serviceMode?: RuntimeServiceMode;
+  service_mode?: RuntimeServiceMode;
+  runtimeManaged?: boolean | string | number;
+  runtime_managed?: boolean | string | number;
+  managedByOuUi?: boolean | string | number;
+  managedByOuui?: boolean | string | number;
+  managed_by_ou_ui?: boolean | string | number;
+  unitPath?: string;
+  unit_path?: string;
+  systemdUnitPath?: string;
+  systemd_unit_path?: string;
+  configDir?: string;
+  config_dir?: string;
+  reloadStatus?: string;
+  reload_status?: string;
+  reloadInfo?: string;
+  reload_info?: string;
+  restartStatus?: string;
+  restart_status?: string;
+  restartInfo?: string;
+  restart_info?: string;
+  healthStatus?: string;
+  health_status?: string;
+  healthInfo?: string;
+  health_info?: string;
   configPath?: string;
   config_path?: string;
   rollbackAvailable?: boolean | string | number;
@@ -241,13 +337,27 @@ export const agents: Agent[] = [
     runtimeCapabilities: ["hot reload", "reality keys", "config dry-run"],
     runtimeVersion: "Xray 1.8.24",
     serviceStatus: "reloading",
+    serviceMode: "managed",
+    runtimeManaged: true,
+    unitPath: "/etc/systemd/system/ou-runtime@ou-hkg-01.service",
+    configDir: "/etc/ou/runtime/xray-hkg-01",
     configPath: "/etc/ou/runtime/xray-hkg-01.json",
     rollbackAvailable: true,
     runtimeApply: {
       currentStage: "reload",
       runtimeVersion: "Xray 1.8.24",
       serviceStatus: "reloading",
+      serviceMode: "managed",
+      runtimeManaged: true,
+      unitPath: "/etc/systemd/system/ou-runtime@ou-hkg-01.service",
+      configDir: "/etc/ou/runtime/xray-hkg-01",
       configPath: "/etc/ou/runtime/xray-hkg-01.json",
+      reloadStatus: "running",
+      reloadInfo: "systemd reload queued after config render",
+      restartStatus: "idle",
+      restartInfo: "no restart required for rolling delivery",
+      healthStatus: "checking",
+      healthInfo: "TCP dial and handshake probes in progress",
       rollbackAvailable: true,
       phases: [
         { stage: "render", status: "success" },
@@ -285,13 +395,27 @@ export const agents: Agent[] = [
     runtimeCapabilities: ["port hopping", "udp relay", "bandwidth policy"],
     runtimeVersion: "Hysteria2 2.6.1",
     serviceStatus: "running",
+    serviceMode: "external",
+    runtimeManaged: false,
+    unitPath: "/opt/ou-runtime/hysteria2-sin-02.service",
+    configDir: "/opt/ou-runtime/hysteria2-sin-02",
     configPath: "/etc/ou/runtime/hysteria2-sin-02.yaml",
     rollbackAvailable: true,
     runtimeApply: {
       currentStage: "render",
       runtimeVersion: "Hysteria2 2.6.1",
       serviceStatus: "running",
+      service_mode: "external",
+      runtime_managed: false,
+      systemd_unit_path: "/opt/ou-runtime/hysteria2-sin-02.service",
+      config_dir: "/opt/ou-runtime/hysteria2-sin-02",
       configPath: "/etc/ou/runtime/hysteria2-sin-02.yaml",
+      reloadStatus: "idle",
+      reloadInfo: "managed by external supervisor",
+      restartStatus: "available",
+      restartInfo: "restart delegated to node operator",
+      healthStatus: "healthy",
+      healthInfo: "probe window stable over last 12 checks",
       rollbackAvailable: true,
       phases: [
         { stage: "render", status: "running" },
@@ -329,6 +453,10 @@ export const agents: Agent[] = [
     runtimeCapabilities: ["certificate sync", "tls fingerprint", "inbound patch"],
     runtimeVersion: "Xray 1.8.23",
     serviceStatus: "degraded",
+    serviceMode: "managed",
+    runtimeManaged: true,
+    unitPath: "/etc/systemd/system/ou-runtime@ou-tyo-03.service",
+    configDir: "/etc/ou/runtime/xray-tyo-03",
     configPath: "/etc/ou/runtime/xray-tyo-03.json",
     rollbackAvailable: true,
     failureStage: "health",
@@ -337,7 +465,17 @@ export const agents: Agent[] = [
       failureStage: "health",
       runtimeVersion: "Xray 1.8.23",
       serviceStatus: "degraded",
+      serviceMode: "managed",
+      runtimeManaged: true,
+      unitPath: "/etc/systemd/system/ou-runtime@ou-tyo-03.service",
+      configDir: "/etc/ou/runtime/xray-tyo-03",
       configPath: "/etc/ou/runtime/xray-tyo-03.json",
+      reloadStatus: "completed",
+      reloadInfo: "reload succeeded before health regression",
+      restartStatus: "blocked",
+      restartInfo: "restart held due to certificate validation failure",
+      healthStatus: "failed",
+      healthInfo: "health probe timed out on certificate chain validation",
       rollbackAvailable: true,
       phases: [
         { stage: "render", status: "success" },
@@ -376,13 +514,27 @@ export const agents: Agent[] = [
     runtimeCapabilities: [],
     runtimeVersion: "Hysteria2 2.5.2",
     serviceStatus: "maintenance",
+    serviceMode: "external",
+    runtimeManaged: false,
+    unitPath: "/opt/ou-runtime/hysteria2-lax-04.service",
+    configDir: "/opt/ou-runtime/hysteria2-lax-04",
     configPath: "/etc/ou/runtime/hysteria2-lax-04.yaml",
     rollbackAvailable: false,
     runtimeApply: {
       currentStage: "rollback",
       runtimeVersion: "Hysteria2 2.5.2",
       serviceStatus: "maintenance",
+      serviceMode: "external",
+      runtimeManaged: false,
+      unitPath: "/opt/ou-runtime/hysteria2-lax-04.service",
+      configDir: "/opt/ou-runtime/hysteria2-lax-04",
       configPath: "/etc/ou/runtime/hysteria2-lax-04.yaml",
+      reloadStatus: "idle",
+      reloadInfo: "external service left untouched",
+      restartStatus: "idle",
+      restartInfo: "operator will restart outside OU-UI",
+      healthStatus: "idle",
+      healthInfo: "maintenance window keeps health checks paused",
       rollbackAvailable: false,
       phases: [
         { stage: "render", status: "success" },
@@ -423,7 +575,17 @@ export const taskQueue: DeployTask[] = [
     currentStage: "reload",
     runtimeVersion: "Xray 1.8.24",
     serviceStatus: "reloading",
+    serviceMode: "managed",
+    runtimeManaged: true,
+    unitPath: "/etc/systemd/system/ou-runtime@ou-hkg-01.service",
+    configDir: "/etc/ou/runtime/xray-hkg-01",
     configPath: "/etc/ou/runtime/xray-hkg-01.json",
+    reloadStatus: "running",
+    reloadInfo: "systemd reload queued after config render",
+    restartStatus: "idle",
+    restartInfo: "rolling delivery avoids restart",
+    healthStatus: "checking",
+    healthInfo: "handshake probes warming up",
     rollbackAvailable: true,
     progress: 72,
     eta: "1m 20s",
@@ -440,7 +602,17 @@ export const taskQueue: DeployTask[] = [
     currentStage: "render",
     runtimeVersion: "Hysteria2 2.6.1",
     serviceStatus: "running",
+    serviceMode: "external",
+    runtimeManaged: false,
+    unitPath: "/opt/ou-runtime/hysteria2-sin-02.service",
+    configDir: "/opt/ou-runtime/hysteria2-sin-02",
     configPath: "/etc/ou/runtime/hysteria2-sin-02.yaml",
+    reloadStatus: "idle",
+    reloadInfo: "external supervisor controls reload",
+    restartStatus: "available",
+    restartInfo: "restart action delegated",
+    healthStatus: "healthy",
+    healthInfo: "UDP probe success rate above threshold",
     rollbackAvailable: true,
     progress: 18,
     eta: "3m 45s",
@@ -457,7 +629,17 @@ export const taskQueue: DeployTask[] = [
     currentStage: "health",
     runtimeVersion: "Xray 1.8.23",
     serviceStatus: "running",
+    serviceMode: "managed",
+    runtimeManaged: true,
+    unitPath: "/etc/systemd/system/ou-runtime@ou-tyo-03.service",
+    configDir: "/etc/ou/runtime/xray-tyo-03",
     configPath: "/etc/ou/runtime/xray-tyo-03.json",
+    reloadStatus: "completed",
+    reloadInfo: "reload completed in 1.4s",
+    restartStatus: "idle",
+    restartInfo: "restart not needed after reload",
+    healthStatus: "healthy",
+    healthInfo: "TLS and inbound probes passed",
     rollbackAvailable: true,
     progress: 100,
     eta: "done",
@@ -475,7 +657,17 @@ export const taskQueue: DeployTask[] = [
     failedStage: "health",
     runtimeVersion: "Xray 1.8.23",
     serviceStatus: "degraded",
+    serviceMode: "managed",
+    runtimeManaged: true,
+    unitPath: "/etc/systemd/system/ou-runtime@ou-tyo-03.service",
+    configDir: "/etc/ou/runtime/xray-tyo-03",
     configPath: "/etc/ou/runtime/xray-tyo-03.json",
+    reloadStatus: "completed",
+    reloadInfo: "reload completed before health failure",
+    restartStatus: "blocked",
+    restartInfo: "restart held by failed health gate",
+    healthStatus: "failed",
+    healthInfo: "certificate chain validation failed",
     rollbackAvailable: true,
     progress: 100,
     eta: "retry scheduled",

@@ -1,6 +1,14 @@
 # Hysteria2 Provider
 
-This document describes the OU-UI v0.3.0 Hysteria2 provider preview. The worker only builds and validates a server configuration model and renders Hysteria2 YAML. It does not install packages, start services, write system files, open firewall rules, or request certificates.
+This document describes the OU-UI v0.6.0 Hysteria2 provider. It builds and validates a server configuration model, renders Hysteria2 YAML, writes it as an active runtime config, and generates an OU-UI managed per-node systemd service. It does not download packages, open firewall rules, or request certificates.
+
+The managed service uses:
+
+```text
+hysteria server -c <configPath>
+```
+
+`configPath`, `configDir`, `unitPath`, `serviceMode`, and `managedByOuui` are returned in `node.deploy` task results and mirrored into Node state.
 
 ## Input model
 
@@ -31,7 +39,7 @@ Compatibility aliases are accepted for early UI experiments:
 
 - listen port is required, either from `listen` or `port`;
 - listen port must be numeric and between `1` and `65535`;
-- listen port ranges and `realm://` listen URIs are not supported in v0.3.0;
+- listen port ranges and `realm://` listen URIs are not supported by the current provider;
 - TLS certificate path is required;
 - TLS key path is required;
 - auth password is required;
@@ -40,7 +48,7 @@ Compatibility aliases are accepted for early UI experiments:
 - `proxy` masquerade requires an absolute `proxy.url`;
 - `string` masquerade requires a `string` block.
 
-Validation does not check whether certificate files exist, because this provider must not perform real system installation or host mutation.
+Validation does not check whether certificate files exist before deployment. The generated managed service will fail health if systemd cannot keep the runtime active.
 
 ## Rendered YAML
 
@@ -80,6 +88,6 @@ masquerade:
 
 ## Traffic limit reservation
 
-`settings.userTrafficLimit` is intentionally kept out of the rendered Hysteria2 YAML in v0.3.0. It exists so the panel and task payloads can converge on a stable field name before OU-UI adds a runtime accounting backend or Hysteria2 auth integration that can enforce per-user quotas.
+`settings.userTrafficLimit` is intentionally kept out of the rendered Hysteria2 YAML. It exists so the panel and task payloads can converge on a stable field name before OU-UI adds a runtime accounting backend or Hysteria2 auth integration that can enforce per-user quotas.
 
 Do not store real passwords, certificate private keys, tokens, or provider API credentials in repository files. Values in examples must remain placeholders.

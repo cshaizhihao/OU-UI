@@ -62,7 +62,7 @@ func (e Executor) Execute(task Task) Result {
 	case models.TaskTypeRuntimeStatus:
 		return Result{Status: models.TaskStatusSucceeded, Result: map[string]any{
 			"metrics":      agentruntime.CollectRuntimeMetrics(),
-			"capabilities": []string{"monitoring", CapabilityTaskPolling, models.TaskTypeNoop, models.TaskTypeRuntimeStatus, "xray.render", "xray.deploy", "hysteria2.render", "hysteria2.deploy"},
+			"capabilities": []string{"monitoring", CapabilityTaskPolling, models.TaskTypeNoop, models.TaskTypeRuntimeStatus, "xray.render", "xray.deploy", "xray.service", "hysteria2.render", "hysteria2.deploy", "hysteria2.service"},
 		}, Logs: "runtime status collected"}
 	case models.TaskTypeNodeDeploy:
 		return e.deployNode(task)
@@ -132,6 +132,9 @@ func (e Executor) deployNode(task Task) Result {
 				Revision:   revision,
 				ConfigPath: applyResult.ConfigPath,
 				BackupPath: applyResult.BackupPath,
+				ConfigDir:   applyResult.ConfigDir,
+				UnitPath:    applyResult.UnitPath,
+				ServiceName: applyResult.ServiceName,
 				Runner:     e.Runner,
 			})
 			appendStage(rollback)
@@ -158,7 +161,12 @@ func (e Executor) deployNode(task Task) Result {
 	applyResult, err := deployer.ApplyConfig(ctx, req)
 	appendStage(applyResult.StageResult)
 	result["configPath"] = applyResult.ConfigPath
+	result["configDir"] = applyResult.ConfigDir
 	result["backupPath"] = applyResult.BackupPath
+	result["unitPath"] = applyResult.UnitPath
+	result["serviceName"] = applyResult.ServiceName
+	result["serviceMode"] = applyResult.ServiceMode
+	result["managedByOuui"] = applyResult.ManagedByOUUI
 	result["rollbackAvailable"] = applyResult.RollbackAvailable
 	if err != nil {
 		return failWithRollback(string(provider.DeployStageApply), err, applyResult)
@@ -174,6 +182,10 @@ func (e Executor) deployNode(task Task) Result {
 	result["serviceName"] = healthResult.ServiceName
 	result["serviceStatus"] = healthResult.ServiceStatus
 	result["runtimeVersion"] = healthResult.RuntimeVersion
+	result["configDir"] = healthResult.ConfigDir
+	result["unitPath"] = healthResult.UnitPath
+	result["serviceMode"] = healthResult.ServiceMode
+	result["managedByOuui"] = healthResult.ManagedByOUUI
 	if err != nil {
 		return failWithRollback(string(provider.DeployStageHealth), err, applyResult)
 	}

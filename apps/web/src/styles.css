@@ -500,6 +500,7 @@ td span:not(.status):not(.task-state):not(.runtime-stage):not(.capability-chip):
 
 .runtime-apply-head > div,
 .runtime-apply-meta > div,
+.runtime-control-signals > div,
 .runtime-cell,
 .config-cell,
 .task-runtime-detail > div {
@@ -510,6 +511,7 @@ td span:not(.status):not(.task-state):not(.runtime-stage):not(.capability-chip):
 
 .runtime-apply-head strong,
 .runtime-apply-meta strong,
+.runtime-control-signals strong,
 .runtime-cell strong,
 .config-cell strong,
 .task-runtime-detail strong {
@@ -522,12 +524,39 @@ td span:not(.status):not(.task-state):not(.runtime-stage):not(.capability-chip):
 
 .runtime-apply-meta {
   display: grid;
-  grid-template-columns: minmax(0, 1.5fr) minmax(96px, 0.7fr);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
 }
 
 .runtime-apply-meta .failure-stage {
   grid-column: 1 / -1;
+}
+
+.runtime-control-signals {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.runtime-control-signals.compact {
+  min-width: 260px;
+  grid-template-columns: 1fr;
+}
+
+.runtime-control-signals > div {
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 8px;
+  background: #ffffff;
+}
+
+.runtime-control-signals small {
+  overflow: hidden;
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .runtime-pipeline {
@@ -982,7 +1011,7 @@ meter {
 
 table {
   width: 100%;
-  min-width: 1560px;
+  min-width: 1780px;
   border-collapse: collapse;
 }
 
@@ -1070,6 +1099,7 @@ td span {
   .control-summary,
   .agent-task-summary,
   .runtime-apply-meta,
+  .runtime-control-signals,
   .task-runtime-detail {
     grid-template-columns: 1fr;
   }

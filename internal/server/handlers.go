@@ -70,7 +70,7 @@ type createNodeRequest struct {
 }
 
 func (h Handler) health(c *gin.Context) {
-	c.JSON(http.StatusOK, gin.H{"ok": true, "version": "v0.5.0"})
+	c.JSON(http.StatusOK, gin.H{"ok": true, "version": "v0.6.0"})
 }
 
 func (h Handler) login(c *gin.Context) {
@@ -110,7 +110,7 @@ func (h Handler) overview(c *gin.Context) {
 		"agentsTotal":  int64(len(agents)),
 		"agentsOnline": online,
 		"nodesTotal":   nodes,
-		"version":      "v0.5.0",
+		"version":      "v0.6.0",
 	})
 }
 
@@ -178,7 +178,7 @@ EOF_ENV
 chmod 600 "$ENV_FILE"
 
 if [[ ! -x "$INSTALL_DIR/ou-ui-agent" ]]; then
-  printf 'v0.5.0 暂未发布预编译 Agent 二进制。\n'
+  printf 'v0.6.0 暂未发布预编译 Agent 二进制。\n'
   printf '请先在源码目录执行：go build -o %%s/ou-ui-agent ./apps/agent\n' "$INSTALL_DIR"
 fi
 
@@ -661,6 +661,15 @@ func (h Handler) syncNodeStatusForTask(task models.Task, status string) {
 	if value := stringFromResult(result, "configPath"); value != "" {
 		updates["config_path"] = value
 	}
+	if value := stringFromResult(result, "configDir"); value != "" {
+		updates["config_dir"] = value
+	}
+	if value := stringFromResult(result, "unitPath"); value != "" {
+		updates["unit_path"] = value
+	}
+	if value := stringFromResult(result, "serviceMode"); value != "" {
+		updates["service_mode"] = value
+	}
 	if value := stringFromResult(result, "serviceName"); value != "" {
 		updates["service_name"] = value
 	}
@@ -669,6 +678,9 @@ func (h Handler) syncNodeStatusForTask(task models.Task, status string) {
 	}
 	if value := stringFromResult(result, "runtimeVersion"); value != "" {
 		updates["runtime_version"] = value
+	}
+	if value, ok := boolFromResult(result, "managedByOuui"); ok {
+		updates["managed_by_ou_ui"] = value
 	}
 	if status == models.TaskStatusFailed {
 		nodeStatus = "failed"
@@ -828,6 +840,29 @@ func stringFromResult(result map[string]any, key string) string {
 		return ""
 	}
 	return strings.TrimSpace(fmt.Sprint(value))
+}
+
+func boolFromResult(result map[string]any, key string) (bool, bool) {
+	if result == nil {
+		return false, false
+	}
+	value, ok := result[key]
+	if !ok {
+		return false, false
+	}
+	switch typed := value.(type) {
+	case bool:
+		return typed, true
+	case string:
+		normalized := strings.ToLower(strings.TrimSpace(typed))
+		switch normalized {
+		case "true", "1", "yes", "y":
+			return true, true
+		case "false", "0", "no", "n":
+			return false, true
+		}
+	}
+	return false, false
 }
 
 func (h Handler) audit(actor, action, target, detail string) {

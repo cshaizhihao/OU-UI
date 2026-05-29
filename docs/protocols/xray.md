@@ -1,6 +1,14 @@
-# Xray Provider Protocol v0.2.0
+# Xray Provider Protocol
 
-OU-UI v0.2.0 models Xray as a render-only provider. It validates node input and renders an Xray JSON configuration, but it does not install Xray, write system service files, start processes, open firewall rules, or run package-manager commands.
+OU-UI v0.6.0 validates node input, renders an Xray JSON configuration, writes it as an active runtime config, and generates an OU-UI managed per-node systemd service. It still does not download Xray binaries, open firewall rules, or run package-manager commands.
+
+The managed service uses:
+
+```text
+xray run -config <configPath>
+```
+
+`configPath`, `configDir`, `unitPath`, `serviceMode`, and `managedByOuui` are returned in `node.deploy` task results and mirrored into Node state.
 
 ## NodeSpec Shape
 
@@ -84,7 +92,7 @@ Optional:
 
 ## Reality
 
-Reality is supported only with VLESS in v0.2.0.
+Reality is supported only with VLESS.
 
 Enable Reality by setting any of:
 

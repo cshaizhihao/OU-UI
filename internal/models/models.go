@@ -117,10 +117,14 @@ type Node struct {
 	ServiceName    string         `json:"serviceName"`
 	ServiceStatus  string         `json:"serviceStatus"`
 	ConfigPath     string         `json:"configPath"`
+	ConfigDir      string         `json:"configDir"`
+	UnitPath       string         `json:"unitPath"`
+	ServiceMode    string         `json:"serviceMode"`
+	ManagedByOUUI  bool           `json:"managedByOuui"`
 	LastError      string         `json:"lastError"`
-	LastDeployedAt *time.Time `json:"lastDeployedAt"`
-	CreatedAt      time.Time  `json:"createdAt"`
-	UpdatedAt      time.Time  `json:"updatedAt"`
+	LastDeployedAt *time.Time     `json:"lastDeployedAt"`
+	CreatedAt      time.Time      `json:"createdAt"`
+	UpdatedAt      time.Time      `json:"updatedAt"`
 }
 
 type AuditLog struct {

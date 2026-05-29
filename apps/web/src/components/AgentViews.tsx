@@ -66,6 +66,8 @@ export function AgentCards({ agents }: AgentViewsProps) {
                 <span>{runtime}</span>
                 <span>{runtimeApply.runtimeVersion}</span>
                 <span>{formatServiceStatus(runtimeApply.serviceStatus)}</span>
+                <span>{formatServiceMode(runtimeApply.serviceMode)}</span>
+                <span>{formatRuntimeManaged(runtimeApply.runtimeManaged)}</span>
                 <span>Queue {agent.queue}</span>
               </div>
 
@@ -79,7 +81,7 @@ export function AgentCards({ agents }: AgentViewsProps) {
                 <ControlDatum label="Last heartbeat" value={heartbeat} />
               </div>
 
-              <RuntimeApplySummary apply={runtimeApply} />
+              <RuntimeServiceSummary apply={runtimeApply} />
 
               <div className="agent-task-summary">
                 <div>
@@ -137,8 +139,9 @@ export function AgentTable({ agents }: AgentViewsProps) {
               <th>Status</th>
               <th>Control</th>
               <th>Runtime</th>
-              <th>Apply stages</th>
-              <th>Config / rollback</th>
+              <th>Control stages</th>
+              <th>Unit / config</th>
+              <th>Service actions</th>
               <th>Capabilities</th>
               <th>CPU</th>
               <th>Memory</th>
@@ -177,6 +180,8 @@ export function AgentTable({ agents }: AgentViewsProps) {
                     <div className="runtime-cell">
                       <strong>{runtime}</strong>
                       <span>{runtimeApply.runtimeVersion}</span>
+                      <span>{formatServiceMode(runtimeApply.serviceMode)}</span>
+                      <span>{formatRuntimeManaged(runtimeApply.runtimeManaged)}</span>
                       <ServiceStatusPill status={runtimeApply.serviceStatus} />
                     </div>
                   </td>
@@ -186,6 +191,8 @@ export function AgentTable({ agents }: AgentViewsProps) {
                   </td>
                   <td>
                     <div className="config-cell">
+                      <span title={runtimeApply.unitPath}>{runtimeApply.unitPath}</span>
+                      <span title={runtimeApply.configDir}>{runtimeApply.configDir}</span>
                       <span title={runtimeApply.configPath}>{runtimeApply.configPath}</span>
                       <strong>
                         {runtimeApply.rollbackAvailable
@@ -193,6 +200,9 @@ export function AgentTable({ agents }: AgentViewsProps) {
                           : "Rollback unavailable"}
                       </strong>
                     </div>
+                  </td>
+                  <td>
+                    <RuntimeControlSignals apply={runtimeApply} compact />
                   </td>
                   <td>
                     <CapabilityList capabilities={capabilities} compact />
@@ -253,7 +263,7 @@ export function RuntimeApplyPipeline({
   return (
     <div
       className={`runtime-pipeline${compact ? " compact" : ""}`}
-      aria-label="Runtime apply stages"
+      aria-label="Runtime service control stages"
     >
       {apply.phases.map((phase) => (
         <span
@@ -270,18 +280,22 @@ export function RuntimeApplyPipeline({
   );
 }
 
-function RuntimeApplySummary({ apply }: { apply: RuntimeApplyView }) {
+function RuntimeServiceSummary({ apply }: { apply: RuntimeApplyView }) {
   return (
     <div className="runtime-apply-summary">
       <div className="runtime-apply-head">
         <div>
-          <span>Runtime apply</span>
+          <span>Service control</span>
           <strong>{runtimeApplyStageLabel[apply.currentStage]}</strong>
         </div>
         <ServiceStatusPill status={apply.serviceStatus} />
       </div>
       <RuntimeApplyPipeline apply={apply} />
       <div className="runtime-apply-meta">
+        <RuntimeMeta label="Mode" value={formatServiceMode(apply.serviceMode)} />
+        <RuntimeMeta label="Managed" value={formatRuntimeManaged(apply.runtimeManaged)} />
+        <RuntimeMeta label="Unit" value={apply.unitPath} />
+        <RuntimeMeta label="Config dir" value={apply.configDir} />
         <RuntimeMeta label="Config" value={apply.configPath} />
         <RuntimeMeta
           label="Rollback"
@@ -289,6 +303,41 @@ function RuntimeApplySummary({ apply }: { apply: RuntimeApplyView }) {
         />
         <RuntimeFailureStage stage={apply.failureStage} />
       </div>
+      <RuntimeControlSignals apply={apply} />
+    </div>
+  );
+}
+
+function RuntimeControlSignals({
+  apply,
+  compact = false
+}: {
+  apply: RuntimeApplyView;
+  compact?: boolean;
+}) {
+  return (
+    <div className={`runtime-control-signals${compact ? " compact" : ""}`}>
+      <RuntimeSignal label="Reload" status={apply.reloadStatus} detail={apply.reloadInfo} />
+      <RuntimeSignal label="Restart" status={apply.restartStatus} detail={apply.restartInfo} />
+      <RuntimeSignal label="Health" status={apply.healthStatus} detail={apply.healthInfo} />
+    </div>
+  );
+}
+
+function RuntimeSignal({
+  label,
+  status,
+  detail
+}: {
+  label: string;
+  status: string;
+  detail: string;
+}) {
+  return (
+    <div>
+      <span>{label}</span>
+      <strong title={detail}>{formatServiceStatus(status)}</strong>
+      <small title={detail}>{detail}</small>
     </div>
   );
 }
@@ -395,6 +444,14 @@ function formatServiceStatus(status: string): string {
     .replace(/\s+/g, " ")
     .trim()
     .replace(/\b[a-z]/g, (letter) => letter.toUpperCase());
+}
+
+function formatServiceMode(mode: string): string {
+  return `${formatServiceStatus(mode)} mode`;
+}
+
+function formatRuntimeManaged(managed: boolean): string {
+  return managed ? "OU-UI managed" : "External service";
 }
 
 function getServiceTone(status: string): "ok" | "warning" | "danger" | "muted" | "info" {

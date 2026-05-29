@@ -30,7 +30,17 @@ export type RuntimeApplyView = {
   currentStage: RuntimeApplyStage;
   runtimeVersion: string;
   serviceStatus: string;
+  serviceMode: string;
+  runtimeManaged: boolean;
+  unitPath: string;
+  configDir: string;
   configPath: string;
+  reloadStatus: string;
+  reloadInfo: string;
+  restartStatus: string;
+  restartInfo: string;
+  healthStatus: string;
+  healthInfo: string;
   rollbackAvailable: boolean;
   failureStage?: RuntimeApplyStage;
   phases: RuntimeApplyPhaseView[];
@@ -274,6 +284,23 @@ export function getAgentRuntimeApply(agent: Agent): RuntimeApplyView {
       agent.failed_stage
     )
   );
+  const runtimeManaged = pickBoolean(
+    readField(apply, "runtimeManaged"),
+    readField(apply, "runtime_managed"),
+    readField(apply, "managedByOuUi"),
+    readField(apply, "managedByOuui"),
+    readField(apply, "managed_by_ou_ui"),
+    agent.runtimeManaged,
+    agent.runtime_managed,
+    agent.managedByOuUi,
+    agent.managedByOuui,
+    agent.managed_by_ou_ui,
+    readField(runtime, "runtimeManaged"),
+    readField(runtime, "runtime_managed"),
+    readField(runtime, "managedByOuUi"),
+    readField(runtime, "managedByOuui"),
+    readField(runtime, "managed_by_ou_ui")
+  );
 
   return {
     currentStage,
@@ -298,6 +325,42 @@ export function getAgentRuntimeApply(agent: Agent): RuntimeApplyView {
         readField(runtime, "serviceStatus"),
         readField(runtime, "service_status")
       ) ?? "unknown",
+    serviceMode:
+      pickString(
+        readField(apply, "serviceMode"),
+        readField(apply, "service_mode"),
+        readField(apply, "mode"),
+        agent.serviceMode,
+        agent.service_mode,
+        readField(runtime, "serviceMode"),
+        readField(runtime, "service_mode"),
+        readField(runtime, "mode")
+      ) ?? "managed",
+    runtimeManaged: runtimeManaged ?? true,
+    unitPath:
+      pickString(
+        readField(apply, "unitPath"),
+        readField(apply, "unit_path"),
+        readField(apply, "systemdUnitPath"),
+        readField(apply, "systemd_unit_path"),
+        agent.unitPath,
+        agent.unit_path,
+        agent.systemdUnitPath,
+        agent.systemd_unit_path,
+        readField(runtime, "unitPath"),
+        readField(runtime, "unit_path"),
+        readField(runtime, "systemdUnitPath"),
+        readField(runtime, "systemd_unit_path")
+      ) ?? "/etc/systemd/system/ou-runtime.service",
+    configDir:
+      pickString(
+        readField(apply, "configDir"),
+        readField(apply, "config_dir"),
+        agent.configDir,
+        agent.config_dir,
+        readField(runtime, "configDir"),
+        readField(runtime, "config_dir")
+      ) ?? "Not reported",
     configPath:
       pickString(
         readField(apply, "configPath"),
@@ -308,6 +371,60 @@ export function getAgentRuntimeApply(agent: Agent): RuntimeApplyView {
         readField(runtime, "configPath"),
         readField(runtime, "config_path")
       ) ?? "Not reported",
+    reloadStatus:
+      pickString(
+        readField(apply, "reloadStatus"),
+        readField(apply, "reload_status"),
+        agent.reloadStatus,
+        agent.reload_status,
+        readField(runtime, "reloadStatus"),
+        readField(runtime, "reload_status")
+      ) ?? "unknown",
+    reloadInfo:
+      pickString(
+        readField(apply, "reloadInfo"),
+        readField(apply, "reload_info"),
+        agent.reloadInfo,
+        agent.reload_info,
+        readField(runtime, "reloadInfo"),
+        readField(runtime, "reload_info")
+      ) ?? "No reload signal",
+    restartStatus:
+      pickString(
+        readField(apply, "restartStatus"),
+        readField(apply, "restart_status"),
+        agent.restartStatus,
+        agent.restart_status,
+        readField(runtime, "restartStatus"),
+        readField(runtime, "restart_status")
+      ) ?? "unknown",
+    restartInfo:
+      pickString(
+        readField(apply, "restartInfo"),
+        readField(apply, "restart_info"),
+        agent.restartInfo,
+        agent.restart_info,
+        readField(runtime, "restartInfo"),
+        readField(runtime, "restart_info")
+      ) ?? "No restart signal",
+    healthStatus:
+      pickString(
+        readField(apply, "healthStatus"),
+        readField(apply, "health_status"),
+        agent.healthStatus,
+        agent.health_status,
+        readField(runtime, "healthStatus"),
+        readField(runtime, "health_status")
+      ) ?? "unknown",
+    healthInfo:
+      pickString(
+        readField(apply, "healthInfo"),
+        readField(apply, "health_info"),
+        agent.healthInfo,
+        agent.health_info,
+        readField(runtime, "healthInfo"),
+        readField(runtime, "health_info")
+      ) ?? "No health signal",
     rollbackAvailable:
       pickBoolean(
         readField(apply, "rollbackAvailable"),
@@ -362,6 +479,23 @@ export function getDeployRuntimeApply(task: DeployTask): RuntimeApplyView {
       task.failed_stage
     )
   );
+  const runtimeManaged = pickBoolean(
+    readField(apply, "runtimeManaged"),
+    readField(apply, "runtime_managed"),
+    readField(apply, "managedByOuUi"),
+    readField(apply, "managedByOuui"),
+    readField(apply, "managed_by_ou_ui"),
+    task.runtimeManaged,
+    task.runtime_managed,
+    task.managedByOuUi,
+    task.managedByOuui,
+    task.managed_by_ou_ui,
+    readField(runtime, "runtimeManaged"),
+    readField(runtime, "runtime_managed"),
+    readField(runtime, "managedByOuUi"),
+    readField(runtime, "managedByOuui"),
+    readField(runtime, "managed_by_ou_ui")
+  );
 
   return {
     currentStage,
@@ -386,6 +520,42 @@ export function getDeployRuntimeApply(task: DeployTask): RuntimeApplyView {
         readField(runtime, "serviceStatus"),
         readField(runtime, "service_status")
       ) ?? "unknown",
+    serviceMode:
+      pickString(
+        readField(apply, "serviceMode"),
+        readField(apply, "service_mode"),
+        readField(apply, "mode"),
+        task.serviceMode,
+        task.service_mode,
+        readField(runtime, "serviceMode"),
+        readField(runtime, "service_mode"),
+        readField(runtime, "mode")
+      ) ?? "managed",
+    runtimeManaged: runtimeManaged ?? true,
+    unitPath:
+      pickString(
+        readField(apply, "unitPath"),
+        readField(apply, "unit_path"),
+        readField(apply, "systemdUnitPath"),
+        readField(apply, "systemd_unit_path"),
+        task.unitPath,
+        task.unit_path,
+        task.systemdUnitPath,
+        task.systemd_unit_path,
+        readField(runtime, "unitPath"),
+        readField(runtime, "unit_path"),
+        readField(runtime, "systemdUnitPath"),
+        readField(runtime, "systemd_unit_path")
+      ) ?? "/etc/systemd/system/ou-runtime.service",
+    configDir:
+      pickString(
+        readField(apply, "configDir"),
+        readField(apply, "config_dir"),
+        task.configDir,
+        task.config_dir,
+        readField(runtime, "configDir"),
+        readField(runtime, "config_dir")
+      ) ?? "Not reported",
     configPath:
       pickString(
         readField(apply, "configPath"),
@@ -396,6 +566,60 @@ export function getDeployRuntimeApply(task: DeployTask): RuntimeApplyView {
         readField(runtime, "configPath"),
         readField(runtime, "config_path")
       ) ?? "Not reported",
+    reloadStatus:
+      pickString(
+        readField(apply, "reloadStatus"),
+        readField(apply, "reload_status"),
+        task.reloadStatus,
+        task.reload_status,
+        readField(runtime, "reloadStatus"),
+        readField(runtime, "reload_status")
+      ) ?? "unknown",
+    reloadInfo:
+      pickString(
+        readField(apply, "reloadInfo"),
+        readField(apply, "reload_info"),
+        task.reloadInfo,
+        task.reload_info,
+        readField(runtime, "reloadInfo"),
+        readField(runtime, "reload_info")
+      ) ?? "No reload signal",
+    restartStatus:
+      pickString(
+        readField(apply, "restartStatus"),
+        readField(apply, "restart_status"),
+        task.restartStatus,
+        task.restart_status,
+        readField(runtime, "restartStatus"),
+        readField(runtime, "restart_status")
+      ) ?? "unknown",
+    restartInfo:
+      pickString(
+        readField(apply, "restartInfo"),
+        readField(apply, "restart_info"),
+        task.restartInfo,
+        task.restart_info,
+        readField(runtime, "restartInfo"),
+        readField(runtime, "restart_info")
+      ) ?? "No restart signal",
+    healthStatus:
+      pickString(
+        readField(apply, "healthStatus"),
+        readField(apply, "health_status"),
+        task.healthStatus,
+        task.health_status,
+        readField(runtime, "healthStatus"),
+        readField(runtime, "health_status")
+      ) ?? "unknown",
+    healthInfo:
+      pickString(
+        readField(apply, "healthInfo"),
+        readField(apply, "health_info"),
+        task.healthInfo,
+        task.health_info,
+        readField(runtime, "healthInfo"),
+        readField(runtime, "health_info")
+      ) ?? "No health signal",
     rollbackAvailable:
       pickBoolean(
         readField(apply, "rollbackAvailable"),
