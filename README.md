@@ -44,7 +44,7 @@ bash scripts/install.sh
 
 安装完成后，脚本会回显完整面板登录链接、安装目录、管理员账号、管理员密码和 Agent 注册令牌。
 
-SSL 说明：`v0.1.0` 的安装脚本会准备证书目录并给出手动证书/acme.sh 分支提示；公网 HTTPS 建议由反向代理或后续 TLS 终止配置接入。
+SSL 说明：`v0.1.0` 的安装脚本会准备证书目录；输入域名时会强制 HTTPS，Nginx 容器会读取 `certs/fullchain.pem` 和 `certs/privkey.pem` 启用 TLS。
 
 ## 手动 Docker Compose
 
