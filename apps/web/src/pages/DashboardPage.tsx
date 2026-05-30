@@ -414,10 +414,14 @@ function V3ControlCenter({
     event.preventDefault();
     const members = agents.slice(0, 4).map((agent, index) => ({
       id: agent.id,
+      agentId: agent.id,
       name: agent.name,
+      address: agent.ip,
+      port: 443,
       latencyMs: 40 + index * 15,
       lossPercent: index === 0 ? 0 : 0.2,
-      weight: 1
+      weight: agent.status === "online" ? 2 : 1,
+      status: agent.status === "offline" ? "offline" : "healthy"
     }));
     void runAction("HA group", () =>
       createLoadBalancer({
@@ -642,8 +646,13 @@ function V3ControlCenter({
             </button>
           </form>
           <MiniTable
-            columns={["Group", "Selected", "Status"]}
-            rows={(control?.loadBalancers ?? []).slice(0, 6).map((group) => [group.name, String(group.lastDecision?.selected ?? "-"), group.status])}
+            columns={["Group", "Entry", "Selected", "Score"]}
+            rows={(control?.loadBalancers ?? []).slice(0, 6).map((group) => [
+              group.name,
+              group.entryTag,
+              String(group.lastDecision?.selected ?? "-"),
+              Number(group.lastDecision?.score ?? 0).toFixed(1)
+            ])}
           />
         </section>
       </div>

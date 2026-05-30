@@ -209,6 +209,172 @@ func TestApplyRoutingQueuesOnlyOnlineCapableAgentsWithXrayPayload(t *testing.T) 
 	}
 }
 
+func TestLoadBalancerEntrySelectsBestHealthyWeightedMember(t *testing.T) {
+	db := openTestDB(t)
+	cfg := config.ServerConfig{
+		SecurePath:               "/ou-ui",
+		AdminUser:                "admin",
+		AdminPassword:            "password",
+		JWTSecret:                "test-secret",
+		AgentJoinToken:           "join",
+		AgentOfflineAfterSeconds: 45,
+	}
+	rawKey := "ouak_ha_read"
+	if err := db.Create(&models.APIKey{
+		ID:      "key_ha_read",
+		Name:    "HA read",
+		KeyHash: hashSecret(rawKey),
+		Scopes:  datatypes.JSON(`["panel:read"]`),
+		Status:  "active",
+	}).Error; err != nil {
+		t.Fatalf("seed api key: %v", err)
+	}
+	members := []map[string]any{
+		{"id": "agt_down", "name": "Down", "address": "down.example.com", "port": 443, "latencyMs": 1, "lossPercent": 0, "weight": 10, "status": "down"},
+		{"id": "agt_lossy", "name": "Lossy", "address": "lossy.example.com", "port": 443, "latencyMs": 25, "lossPercent": 7.5, "weight": 1, "status": "healthy"},
+		{"id": "agt_best", "name": "Best", "address": "best.example.com", "port": 443, "latencyMs": 55, "lossPercent": 0.1, "weight": 3, "status": "healthy"},
+	}
+	if err := db.Create(&models.LoadBalancerGroup{
+		ID:                  "lbg_edge",
+		Name:                "Edge HA",
+		EntryTag:            "ou-ha-edge",
+		Strategy:            "latency-loss",
+		Members:             mustJSON(members),
+		Status:              "ready",
+		LastDecision:        mustJSON(map[string]any{}),
+		HealthCheckInterval: 30,
+	}).Error; err != nil {
+		t.Fatalf("seed load balancer: %v", err)
+	}
+	router := NewRouter(cfg, db)
+
+	req := httptest.NewRequest(http.MethodGet, "/ou-ui/api/v1/load-balancers/lbg_edge/entry", nil)
+	req.Header.Set("Authorization", "Bearer "+rawKey)
+	resp := httptest.NewRecorder()
+	router.ServeHTTP(resp, req)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected HA entry response, got %d: %s", resp.Code, resp.Body.String())
+	}
+	var body struct {
+		GroupID   string         `json:"groupId"`
+		EntryTag  string         `json:"entryTag"`
+		Status    string         `json:"status"`
+		Selected  string         `json:"selected"`
+		Member    map[string]any `json:"member"`
+		Decision  map[string]any `json:"decision"`
+		EntryPath string         `json:"entryPath"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode HA entry response: %v", err)
+	}
+	if body.GroupID != "lbg_edge" || body.EntryTag != "ou-ha-edge" || body.EntryPath != "/ou-ui/api/v1/load-balancers/lbg_edge/entry" {
+		t.Fatalf("unexpected HA entry identity: %+v", body)
+	}
+	if body.Status != "ready" || body.Selected != "agt_best" {
+		t.Fatalf("expected agt_best to be selected, got %+v", body)
+	}
+	if body.Member["address"] != "best.example.com" {
+		t.Fatalf("expected selected member details, got %+v", body.Member)
+	}
+	if body.Decision["selected"] != "agt_best" {
+		t.Fatalf("expected decision to match selected member, got %+v", body.Decision)
+	}
+	var group models.LoadBalancerGroup
+	if err := db.First(&group, "id = ?", "lbg_edge").Error; err != nil {
+		t.Fatalf("reload load balancer: %v", err)
+	}
+	if group.Status != "ready" || !bytes.Contains(group.LastDecision, []byte("agt_best")) {
+		t.Fatalf("expected persisted decision to be refreshed, got status=%s decision=%s", group.Status, group.LastDecision)
+	}
+}
+
+func TestLoadBalancerHealthUpdateSwitchesSelectedMember(t *testing.T) {
+	db := openTestDB(t)
+	cfg := config.ServerConfig{
+		SecurePath:               "/ou-ui",
+		AdminUser:                "admin",
+		AdminPassword:            "password",
+		JWTSecret:                "test-secret",
+		AgentJoinToken:           "join",
+		AgentOfflineAfterSeconds: 45,
+	}
+	rawKey := "ouak_ha_write"
+	if err := db.Create(&models.APIKey{
+		ID:      "key_ha_write",
+		Name:    "HA write",
+		KeyHash: hashSecret(rawKey),
+		Scopes:  datatypes.JSON(`["panel:read","panel:write"]`),
+		Status:  "active",
+	}).Error; err != nil {
+		t.Fatalf("seed api key: %v", err)
+	}
+	members := []map[string]any{
+		{"id": "agt_primary", "name": "Primary", "address": "primary.example.com", "port": 443, "latencyMs": 10, "lossPercent": 0, "weight": 1, "status": "healthy"},
+		{"id": "agt_backup", "name": "Backup", "address": "backup.example.com", "port": 443, "latencyMs": 80, "lossPercent": 0, "weight": 1, "status": "healthy"},
+	}
+	if err := db.Create(&models.LoadBalancerGroup{
+		ID:                  "lbg_switch",
+		Name:                "Switch HA",
+		EntryTag:            "ou-ha-switch",
+		Strategy:            "latency-loss",
+		Members:             mustJSON(members),
+		Status:              "ready",
+		LastDecision:        mustJSON(map[string]any{}),
+		HealthCheckInterval: 30,
+	}).Error; err != nil {
+		t.Fatalf("seed load balancer: %v", err)
+	}
+	router := NewRouter(cfg, db)
+	payload, _ := json.Marshal(map[string]any{
+		"members": []map[string]any{
+			{"id": "agt_primary", "status": "down", "latencyMs": 5000, "lossPercent": 100, "lastError": "probe timeout"},
+		},
+	})
+	req := httptest.NewRequest(http.MethodPost, "/ou-ui/api/v1/load-balancers/lbg_switch/health", bytes.NewReader(payload))
+	req.Header.Set("Authorization", "Bearer "+rawKey)
+	resp := httptest.NewRecorder()
+	router.ServeHTTP(resp, req)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected HA health update, got %d: %s", resp.Code, resp.Body.String())
+	}
+	var body struct {
+		Decision map[string]any `json:"decision"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode health response: %v", err)
+	}
+	if body.Decision["selected"] != "agt_backup" {
+		t.Fatalf("expected backup to be selected after primary down, got %+v", body.Decision)
+	}
+	var group models.LoadBalancerGroup
+	if err := db.First(&group, "id = ?", "lbg_switch").Error; err != nil {
+		t.Fatalf("reload load balancer: %v", err)
+	}
+	if group.Status != "ready" || !bytes.Contains(group.LastDecision, []byte("agt_backup")) || !bytes.Contains(group.Members, []byte("probe timeout")) {
+		t.Fatalf("expected persisted health switch, status=%s members=%s decision=%s", group.Status, group.Members, group.LastDecision)
+	}
+}
+
+func TestLoadBalancerDecisionSkipsOfflineAgentRecord(t *testing.T) {
+	db := openTestDB(t)
+	now := time.Now().UTC()
+	if err := db.Create(&[]models.Agent{
+		{ID: "agt_fast_offline", Name: "Fast Offline", Status: models.AgentStatusOffline, AuthStatus: models.AgentAuthActive, LastSeenAt: &now},
+		{ID: "agt_slow_online", Name: "Slow Online", Status: models.AgentStatusOnline, AuthStatus: models.AgentAuthActive, LastSeenAt: &now},
+	}).Error; err != nil {
+		t.Fatalf("seed agents: %v", err)
+	}
+	h := Handler{db: db, cfg: config.ServerConfig{AgentOfflineAfterSeconds: 45}}
+	decision := h.loadBalancerDecision([]map[string]any{
+		{"id": "agt_fast_offline", "latencyMs": 1, "lossPercent": 0, "weight": 10, "status": "healthy"},
+		{"id": "agt_slow_online", "latencyMs": 100, "lossPercent": 0, "weight": 1, "status": "healthy"},
+	})
+	body := mapFromJSON(decision)
+	if body["selected"] != "agt_slow_online" {
+		t.Fatalf("expected offline agent to be skipped, got %s", decision)
+	}
+}
+
 func assertRuleField(t *testing.T, rule map[string]any, field string, want []string, outbound string) {
 	t.Helper()
 	if rule["outboundTag"] != outbound {

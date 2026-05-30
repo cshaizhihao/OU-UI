@@ -257,18 +257,14 @@ func (h Handler) recomputeLoadBalancers() {
 		return
 	}
 	for _, group := range groups {
-		var members []map[string]any
-		if err := json.Unmarshal(group.Members, &members); err != nil {
+		members, err := loadBalancerMembersFromJSON(group.Members)
+		if err != nil {
 			continue
 		}
-		decision := h.loadBalancerDecision(members)
-		status := "ready"
-		if strings.Contains(string(decision), `"selected":""`) {
-			status = "degraded"
-		}
+		decision := h.loadBalancerDecision(members, group.Strategy)
 		_ = h.db.Model(&models.LoadBalancerGroup{}).Where("id = ?", group.ID).Updates(map[string]any{
 			"last_decision": decision,
-			"status":        status,
+			"status":        loadBalancerStatusFromDecision(decision),
 		}).Error
 	}
 }
@@ -553,6 +549,10 @@ type loadBalancerRequest struct {
 	HealthCheckInterval int              `json:"healthCheckInterval"`
 }
 
+type loadBalancerHealthRequest struct {
+	Members []map[string]any `json:"members"`
+}
+
 func (h Handler) listLoadBalancers(c *gin.Context) {
 	var groups []models.LoadBalancerGroup
 	if err := h.db.Order("updated_at desc").Find(&groups).Error; err != nil {
@@ -568,14 +568,21 @@ func (h Handler) createLoadBalancer(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request"})
 		return
 	}
+	members, err := normalizeLoadBalancerMembers(req.Members)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	strategy := normalizeLoadBalancerStrategy(req.Strategy)
+	decision := h.loadBalancerDecision(members, strategy)
 	group := models.LoadBalancerGroup{
 		ID:                  "lbg_" + randomHex(8),
 		Name:                strings.TrimSpace(req.Name),
 		EntryTag:            defaultNonEmpty(req.EntryTag, "ou-ha-"+randomHex(3)),
-		Strategy:            defaultNonEmpty(req.Strategy, "latency-loss"),
-		Members:             mustJSON(req.Members),
-		Status:              "ready",
-		LastDecision:        h.loadBalancerDecision(req.Members),
+		Strategy:            strategy,
+		Members:             mustJSON(members),
+		Status:              loadBalancerStatusFromDecision(decision),
+		LastDecision:        decision,
 		HealthCheckInterval: req.HealthCheckInterval,
 	}
 	if group.HealthCheckInterval <= 0 {
@@ -600,6 +607,11 @@ func (h Handler) updateLoadBalancer(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request"})
 		return
 	}
+	members, err := loadBalancerMembersFromJSON(group.Members)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "load balancer members are invalid"})
+		return
+	}
 	if req.Name != "" {
 		group.Name = strings.TrimSpace(req.Name)
 	}
@@ -607,15 +619,21 @@ func (h Handler) updateLoadBalancer(c *gin.Context) {
 		group.EntryTag = strings.TrimSpace(req.EntryTag)
 	}
 	if req.Strategy != "" {
-		group.Strategy = strings.TrimSpace(req.Strategy)
+		group.Strategy = normalizeLoadBalancerStrategy(req.Strategy)
 	}
 	if req.Members != nil {
-		group.Members = mustJSON(req.Members)
-		group.LastDecision = h.loadBalancerDecision(req.Members)
+		members, err = normalizeLoadBalancerMembers(req.Members)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		group.Members = mustJSON(members)
 	}
 	if req.HealthCheckInterval > 0 {
 		group.HealthCheckInterval = req.HealthCheckInterval
 	}
+	group.LastDecision = h.loadBalancerDecision(members, group.Strategy)
+	group.Status = loadBalancerStatusFromDecision(group.LastDecision)
 	if err := h.db.Save(&group).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "update load balancer failed"})
 		return
@@ -624,34 +642,367 @@ func (h Handler) updateLoadBalancer(c *gin.Context) {
 	c.JSON(http.StatusOK, group)
 }
 
-func (h Handler) loadBalancerDecision(members []map[string]any) datatypes.JSON {
+func (h Handler) getLoadBalancerEntry(c *gin.Context) {
+	var group models.LoadBalancerGroup
+	if err := h.db.First(&group, "id = ?", c.Param("id")).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "load balancer not found"})
+		return
+	}
+	members, err := loadBalancerMembersFromJSON(group.Members)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "load balancer members are invalid"})
+		return
+	}
+	decision := h.loadBalancerDecision(members, group.Strategy)
+	status := loadBalancerStatusFromDecision(decision)
+	if err := h.db.Model(&models.LoadBalancerGroup{}).Where("id = ?", group.ID).Updates(map[string]any{
+		"last_decision": decision,
+		"status":        status,
+	}).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "persist load balancer decision failed"})
+		return
+	}
+	decisionMap := mapFromJSON(decision)
+	c.JSON(http.StatusOK, gin.H{
+		"groupId":   group.ID,
+		"entryTag":  group.EntryTag,
+		"status":    status,
+		"selected":  stringFromAny(decisionMap["selected"]),
+		"member":    mapFromAny(decisionMap["member"]),
+		"decision":  decisionMap,
+		"entryPath": loadBalancerEntryPath(h.cfg.SecurePath, group.ID),
+	})
+}
+
+func (h Handler) updateLoadBalancerHealth(c *gin.Context) {
+	var group models.LoadBalancerGroup
+	if err := h.db.First(&group, "id = ?", c.Param("id")).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "load balancer not found"})
+		return
+	}
+	var req loadBalancerHealthRequest
+	if err := c.ShouldBindJSON(&req); err != nil || req.Members == nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request"})
+		return
+	}
+	members, err := loadBalancerMembersFromJSON(group.Members)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "load balancer members are invalid"})
+		return
+	}
+	updates := map[string]map[string]any{}
+	for _, update := range req.Members {
+		id := loadBalancerMemberID(update)
+		if id == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "health member id is required"})
+			return
+		}
+		updates[id] = update
+	}
+	now := time.Now().UTC().Format(time.RFC3339)
+	seen := map[string]bool{}
+	for i := range members {
+		id := loadBalancerMemberID(members[i])
+		update, ok := updates[id]
+		if !ok {
+			continue
+		}
+		mergeLoadBalancerHealth(members[i], update, now)
+		seen[id] = true
+	}
+	for id, update := range updates {
+		if seen[id] {
+			continue
+		}
+		next := cloneMap(update)
+		mergeLoadBalancerHealth(next, update, now)
+		members = append(members, next)
+	}
+	members, err = normalizeLoadBalancerMembers(members)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	group.Members = mustJSON(members)
+	group.LastDecision = h.loadBalancerDecision(members, group.Strategy)
+	group.Status = loadBalancerStatusFromDecision(group.LastDecision)
+	if err := h.db.Save(&group).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "update load balancer health failed"})
+		return
+	}
+	h.audit("panel", "loadbalancer.health", group.ID, strconv.Itoa(len(req.Members)))
+	c.JSON(http.StatusOK, gin.H{"item": group, "decision": mapFromJSON(group.LastDecision)})
+}
+
+func (h Handler) loadBalancerDecision(members []map[string]any, strategies ...string) datatypes.JSON {
+	strategy := "latency-loss"
+	if len(strategies) > 0 {
+		strategy = normalizeLoadBalancerStrategy(strategies[0])
+	}
+	agentStates := h.loadBalancerAgentStates(members)
 	type candidate struct {
-		ID    string
-		Score float64
+		ID      string
+		Score   float64
+		Member  map[string]any
+		Summary map[string]any
 	}
 	candidates := make([]candidate, 0, len(members))
+	rejected := make([]map[string]any, 0)
 	for _, member := range members {
-		id := strings.TrimSpace(fmt.Sprint(member["id"]))
+		id := loadBalancerMemberID(member)
 		if id == "" {
 			continue
 		}
-		latency := floatFromAny(member["latencyMs"])
-		loss := floatFromAny(member["lossPercent"])
-		weight := floatFromAny(member["weight"])
+		status := normalizeLoadBalancerMemberStatus(stringFromAny(member["status"]))
+		if status == "" {
+			status = "healthy"
+		}
+		if enabled, ok := boolFromAny(member["enabled"]); ok && !enabled {
+			rejected = append(rejected, gin.H{"id": id, "status": "disabled", "reason": "member disabled"})
+			continue
+		}
+		if !loadBalancerStatusEligible(status) {
+			rejected = append(rejected, gin.H{"id": id, "status": status, "reason": "member status is not eligible"})
+			continue
+		}
+		if reason := h.loadBalancerAgentBlockReason(member, agentStates); reason != "" {
+			rejected = append(rejected, gin.H{"id": id, "status": status, "reason": reason})
+			continue
+		}
+		latency, hasLatency := numberFromAny(member["latencyMs"])
+		loss, hasLoss := numberFromAny(member["lossPercent"])
+		weight, hasWeight := numberFromAny(member["weight"])
 		if weight <= 0 {
 			weight = 1
 		}
-		candidates = append(candidates, candidate{ID: id, Score: (latency + loss*100) / weight})
+		if !hasWeight {
+			weight = 1
+		}
+		if !hasLatency {
+			latency = 1000
+		}
+		if !hasLoss {
+			loss = 100
+		}
+		if latency < 0 || loss < 0 {
+			rejected = append(rejected, gin.H{"id": id, "status": status, "reason": "negative metrics are invalid"})
+			continue
+		}
+		score := (latency + loss*100) / weight
+		if strategy == "weighted" {
+			score = (latency + loss*100 + 100) / weight
+		}
+		if status == "degraded" {
+			score += 250
+		}
+		summary := gin.H{
+			"id":          id,
+			"status":      status,
+			"latencyMs":   latency,
+			"lossPercent": loss,
+			"weight":      weight,
+			"score":       score,
+		}
+		if !hasLatency {
+			summary["latencyEstimated"] = true
+		}
+		if !hasLoss {
+			summary["lossEstimated"] = true
+		}
+		candidates = append(candidates, candidate{ID: id, Score: score, Member: cloneMap(member), Summary: summary})
 	}
 	sort.Slice(candidates, func(i, j int) bool {
+		if candidates[i].Score == candidates[j].Score {
+			return candidates[i].ID < candidates[j].ID
+		}
 		return candidates[i].Score < candidates[j].Score
 	})
-	payload := map[string]any{"selected": "", "score": 0, "decidedAt": time.Now().UTC().Format(time.RFC3339)}
+	candidateSummaries := make([]map[string]any, 0, len(candidates))
+	for _, item := range candidates {
+		candidateSummaries = append(candidateSummaries, item.Summary)
+	}
+	payload := map[string]any{
+		"selected":   "",
+		"score":      0,
+		"status":     "degraded",
+		"strategy":   strategy,
+		"member":     map[string]any{},
+		"candidates": candidateSummaries,
+		"rejected":   rejected,
+		"decidedAt":  time.Now().UTC().Format(time.RFC3339),
+	}
 	if len(candidates) > 0 {
 		payload["selected"] = candidates[0].ID
 		payload["score"] = candidates[0].Score
+		payload["status"] = "ready"
+		payload["member"] = candidates[0].Member
 	}
 	return mustJSON(payload)
+}
+
+func loadBalancerMembersFromJSON(raw datatypes.JSON) ([]map[string]any, error) {
+	if len(raw) == 0 {
+		return nil, nil
+	}
+	var members []map[string]any
+	if err := json.Unmarshal(raw, &members); err != nil {
+		return nil, err
+	}
+	return normalizeLoadBalancerMembers(members)
+}
+
+func normalizeLoadBalancerMembers(members []map[string]any) ([]map[string]any, error) {
+	out := make([]map[string]any, 0, len(members))
+	for _, member := range members {
+		next := cloneMap(member)
+		id := loadBalancerMemberID(next)
+		if id == "" {
+			return nil, fmt.Errorf("load balancer member id is required")
+		}
+		next["id"] = id
+		status := normalizeLoadBalancerMemberStatus(stringFromAny(next["status"]))
+		if status == "" {
+			status = "healthy"
+		}
+		next["status"] = status
+		if weight, ok := numberFromAny(next["weight"]); ok {
+			if weight < 0 {
+				return nil, fmt.Errorf("load balancer member %s has invalid weight", id)
+			}
+		} else {
+			next["weight"] = 1
+		}
+		if latency, ok := numberFromAny(next["latencyMs"]); ok && latency < 0 {
+			return nil, fmt.Errorf("load balancer member %s has invalid latency", id)
+		}
+		if loss, ok := numberFromAny(next["lossPercent"]); ok && loss < 0 {
+			return nil, fmt.Errorf("load balancer member %s has invalid loss", id)
+		}
+		if port, ok := numberFromAny(next["port"]); ok && (port < 0 || port > 65535) {
+			return nil, fmt.Errorf("load balancer member %s has invalid port", id)
+		}
+		out = append(out, next)
+	}
+	return out, nil
+}
+
+func normalizeLoadBalancerStrategy(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "weighted", "latency-loss":
+		return strings.ToLower(strings.TrimSpace(value))
+	default:
+		return "latency-loss"
+	}
+}
+
+func normalizeLoadBalancerMemberStatus(value string) string {
+	return strings.ToLower(strings.TrimSpace(value))
+}
+
+func loadBalancerStatusEligible(status string) bool {
+	switch normalizeLoadBalancerMemberStatus(status) {
+	case "", "healthy", "online", "ready", "active", "degraded":
+		return true
+	case "down", "offline", "disabled", "revoked", "failed", "failing", "inactive", "maintenance":
+		return false
+	default:
+		return false
+	}
+}
+
+func loadBalancerStatusFromDecision(decision datatypes.JSON) string {
+	payload := mapFromJSON(decision)
+	if stringFromAny(payload["selected"]) == "" {
+		return "degraded"
+	}
+	if status := stringFromAny(payload["status"]); status != "" {
+		return status
+	}
+	return "ready"
+}
+
+func loadBalancerMemberID(member map[string]any) string {
+	for _, key := range []string{"id", "nodeId", "agentId"} {
+		if value := stringFromAny(member[key]); value != "" {
+			return value
+		}
+	}
+	return ""
+}
+
+func loadBalancerMemberAgentID(member map[string]any) string {
+	if value := stringFromAny(member["agentId"]); value != "" {
+		return value
+	}
+	if value := stringFromAny(member["id"]); value != "" && stringFromAny(member["nodeId"]) == "" {
+		return value
+	}
+	return ""
+}
+
+func (h Handler) loadBalancerAgentStates(members []map[string]any) map[string]models.Agent {
+	out := map[string]models.Agent{}
+	if h.db == nil {
+		return out
+	}
+	ids := make([]string, 0, len(members))
+	seen := map[string]bool{}
+	for _, member := range members {
+		id := loadBalancerMemberAgentID(member)
+		if id == "" || seen[id] {
+			continue
+		}
+		ids = append(ids, id)
+		seen[id] = true
+	}
+	if len(ids) == 0 {
+		return out
+	}
+	var agents []models.Agent
+	if err := h.db.Where("id IN ?", ids).Find(&agents).Error; err != nil {
+		return out
+	}
+	for _, agent := range agents {
+		out[agent.ID] = agent
+	}
+	return out
+}
+
+func (h Handler) loadBalancerAgentBlockReason(member map[string]any, states map[string]models.Agent) string {
+	agentID := loadBalancerMemberAgentID(member)
+	if agentID == "" {
+		return ""
+	}
+	agent, ok := states[agentID]
+	if !ok {
+		return ""
+	}
+	if agent.AuthStatus == models.AgentAuthRevoked {
+		return "agent revoked"
+	}
+	if agent.Status == models.AgentStatusOffline {
+		return "agent offline"
+	}
+	if agent.LastSeenAt != nil && h.cfg.AgentOfflineAfter() > 0 && agent.LastSeenAt.Before(time.Now().UTC().Add(-h.cfg.AgentOfflineAfter())) {
+		return "agent heartbeat stale"
+	}
+	return ""
+}
+
+func mergeLoadBalancerHealth(member map[string]any, update map[string]any, checkedAt string) {
+	for _, key := range []string{"agentId", "nodeId", "name", "address", "port", "status", "enabled", "latencyMs", "lossPercent", "weight", "lastError", "lastCheckedAt"} {
+		if value, ok := update[key]; ok {
+			member[key] = value
+		}
+	}
+	if stringFromAny(member["lastCheckedAt"]) == "" {
+		member["lastCheckedAt"] = checkedAt
+	}
+}
+
+func loadBalancerEntryPath(securePath, groupID string) string {
+	base := strings.TrimRight(defaultNonEmpty(securePath, "/ou-ui"), "/")
+	return fmt.Sprintf("%s/api/v1/load-balancers/%s/entry", base, groupID)
 }
 
 type webhookRequest struct {
@@ -1219,6 +1570,8 @@ func (h Handler) apiDocs(c *gin.Context) {
 			"/routing/rules":                    gin.H{"get": gin.H{"summary": "List routing rules"}, "post": gin.H{"summary": "Create routing rule"}},
 			"/routing/apply":                    gin.H{"post": gin.H{"summary": "Queue routing.apply tasks for capable Agents"}},
 			"/load-balancers":                   gin.H{"get": gin.H{"summary": "List HA groups"}, "post": gin.H{"summary": "Create HA group"}},
+			"/load-balancers/{id}/entry":        gin.H{"get": gin.H{"summary": "Resolve the current HA entry decision"}},
+			"/load-balancers/{id}/health":       gin.H{"post": gin.H{"summary": "Update HA member latency, loss, and health"}},
 			"/webhooks":                         gin.H{"get": gin.H{"summary": "List alert webhooks"}, "post": gin.H{"summary": "Create alert webhook"}},
 			"/subscriptions":                    gin.H{"get": gin.H{"summary": "List external subscriptions"}, "post": gin.H{"summary": "Create external subscription"}},
 			"/clash/profiles":                   gin.H{"get": gin.H{"summary": "List Clash profiles"}, "post": gin.H{"summary": "Create Clash profile"}},
@@ -1761,13 +2114,17 @@ func cloneMapSlice(values []map[string]any) []map[string]any {
 	}
 	out := make([]map[string]any, 0, len(values))
 	for _, value := range values {
-		next := make(map[string]any, len(value))
-		for key, item := range value {
-			next[key] = item
-		}
-		out = append(out, next)
+		out = append(out, cloneMap(value))
 	}
 	return out
+}
+
+func cloneMap(value map[string]any) map[string]any {
+	next := make(map[string]any, len(value))
+	for key, item := range value {
+		next[key] = item
+	}
+	return next
 }
 
 func containsWildcard(values []string) bool {
@@ -1795,6 +2152,73 @@ func limitFromQuery(c *gin.Context, fallback int) int {
 		return 1000
 	}
 	return limit
+}
+
+func stringFromAny(value any) string {
+	switch typed := value.(type) {
+	case nil:
+		return ""
+	case string:
+		return strings.TrimSpace(typed)
+	case fmt.Stringer:
+		return strings.TrimSpace(typed.String())
+	default:
+		return strings.TrimSpace(fmt.Sprint(typed))
+	}
+}
+
+func mapFromAny(value any) map[string]any {
+	if typed, ok := value.(map[string]any); ok {
+		return typed
+	}
+	return map[string]any{}
+}
+
+func boolFromAny(value any) (bool, bool) {
+	switch typed := value.(type) {
+	case bool:
+		return typed, true
+	case string:
+		if strings.TrimSpace(typed) == "" {
+			return false, false
+		}
+		parsed, err := strconv.ParseBool(strings.TrimSpace(typed))
+		return parsed, err == nil
+	default:
+		return false, false
+	}
+}
+
+func numberFromAny(value any) (float64, bool) {
+	switch typed := value.(type) {
+	case float64:
+		return typed, true
+	case float32:
+		return float64(typed), true
+	case int:
+		return float64(typed), true
+	case int64:
+		return float64(typed), true
+	case int32:
+		return float64(typed), true
+	case uint:
+		return float64(typed), true
+	case uint64:
+		return float64(typed), true
+	case uint32:
+		return float64(typed), true
+	case json.Number:
+		out, err := typed.Float64()
+		return out, err == nil
+	case string:
+		if strings.TrimSpace(typed) == "" {
+			return 0, false
+		}
+		out, err := strconv.ParseFloat(strings.TrimSpace(typed), 64)
+		return out, err == nil
+	default:
+		return 0, false
+	}
 }
 
 func floatFromAny(value any) float64 {

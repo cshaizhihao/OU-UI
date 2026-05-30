@@ -50,6 +50,8 @@ func NewRouter(cfg config.ServerConfig, db *gorm.DB) *gin.Engine {
 	api.GET("/routing/export/xray", h.requirePanelAuth(), h.exportXrayRouting)
 	api.GET("/load-balancers", h.requirePanelAuth(), h.listLoadBalancers)
 	api.POST("/load-balancers", h.requirePanelAuth(), h.createLoadBalancer)
+	api.GET("/load-balancers/:id/entry", h.requirePanelAuth(), h.getLoadBalancerEntry)
+	api.POST("/load-balancers/:id/health", h.requirePanelAuth(), h.updateLoadBalancerHealth)
 	api.PATCH("/load-balancers/:id", h.requirePanelAuth(), h.updateLoadBalancer)
 	api.GET("/webhooks", h.requirePanelAuth(), h.listWebhooks)
 	api.POST("/webhooks", h.requirePanelAuth(), h.createWebhook)
