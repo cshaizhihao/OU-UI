@@ -64,6 +64,10 @@ a {
   gap: 16px;
 }
 
+.login-form .primary-button {
+  min-height: 42px;
+}
+
 .login-error {
   margin: 0;
   border: 1px solid #fecaca;
@@ -390,8 +394,30 @@ select:focus {
 }
 
 .dashboard {
+  position: relative;
   display: grid;
   gap: 20px;
+}
+
+.refresh-rail {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  display: block;
+  height: 3px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgb(203 213 225 / 58%);
+}
+
+.refresh-rail::after {
+  display: block;
+  width: 38%;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #14b8a6, #38bdf8, #f43f5e);
+  content: "";
+  animation: refresh-rail 1.18s ease-in-out infinite;
 }
 
 .notice-row {
@@ -410,18 +436,114 @@ select:focus {
   font-size: 14px;
 }
 
-.skeleton-grid {
+.skeleton-card {
+  pointer-events: none;
+}
+
+.skeleton-stack {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  min-width: 0;
+  gap: 9px;
+}
+
+.skeleton-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.skeleton-line,
+.skeleton-pill,
+.skeleton-block {
+  display: block;
+  max-width: 100%;
+  border-radius: 8px;
+  background: linear-gradient(90deg, #dbe4ef 0%, #f8fafc 44%, #dbe4ef 100%);
+  background-size: 220% 100%;
+  animation: skeleton-pulse 1.4s ease-in-out infinite;
+}
+
+.skeleton-line {
+  width: 54%;
+  height: 12px;
+}
+
+.skeleton-line.tiny {
+  width: 78px;
+}
+
+.skeleton-line.small {
+  width: 42%;
+}
+
+.skeleton-line.medium {
+  width: 62%;
+}
+
+.skeleton-line.large {
+  width: 78%;
+  height: 22px;
+}
+
+.skeleton-line.xlarge {
+  width: 92%;
+  height: 28px;
+}
+
+.skeleton-line.wide {
+  width: 100%;
+}
+
+.skeleton-pill {
+  width: 76px;
+  height: 27px;
+  border-radius: 999px;
+}
+
+.skeleton-block {
+  min-height: 72px;
+}
+
+.skeleton-block.short {
+  min-height: 58px;
+}
+
+.skeleton-block.medium {
+  min-height: 112px;
+}
+
+.skeleton-block.input {
+  min-height: 42px;
+}
+
+.skeleton-block.button {
+  width: 116px;
+  min-height: 40px;
+}
+
+.skeleton-block.chart {
+  min-height: 286px;
+}
+
+.skeleton-block.signal {
+  min-height: 84px;
+}
+
+.skeleton-block.metric {
+  min-height: 76px;
+}
+
+.skeleton-table {
+  display: grid;
   gap: 16px;
 }
 
-.skeleton-grid span {
-  height: 104px;
-  border-radius: 8px;
-  background: linear-gradient(90deg, #e2e8f0 0%, #f8fafc 45%, #e2e8f0 100%);
-  background-size: 220% 100%;
-  animation: skeleton-pulse 1.4s ease-in-out infinite;
+.skeleton-panel .mini-row {
+  background: #f8fafc;
+}
+
+.empty-state {
+  margin: 0;
 }
 
 @keyframes skeleton-pulse {
@@ -431,6 +553,16 @@ select:focus {
 
   to {
     background-position: -220% 0;
+  }
+}
+
+@keyframes refresh-rail {
+  from {
+    transform: translateX(-120%);
+  }
+
+  to {
+    transform: translateX(320%);
   }
 }
 
@@ -1567,7 +1699,6 @@ td span {
 
   .kpi-grid,
   .agent-grid,
-  .skeleton-grid,
   .dispatch-form,
   .control-form,
   .signal-stack,
@@ -1578,7 +1709,10 @@ td span {
 
 @media (prefers-reduced-motion: reduce) {
   .workspace::before,
-  .skeleton-grid span {
+  .refresh-rail::after,
+  .skeleton-line,
+  .skeleton-pill,
+  .skeleton-block {
     animation: none;
   }
 

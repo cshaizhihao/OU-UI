@@ -1,24 +1,11 @@
 import {
   AgentCards,
-  AgentTable,
-  RuntimeApplyPipeline,
-  TaskStatePill
+  AgentTable
 } from "../components/AgentViews";
 import { AnalyticsPanel } from "../components/Charts";
 import {
-  getDeployRuntimeApply,
-  getDeployTaskState,
-  getRuntimeLabel,
-  getTaskProgress,
-  runtimeApplyStageLabel,
-  runtimeApplyStages
-} from "../controlFields";
-import {
-  agents,
-  nodeHealthRows,
   protocolOptions,
   runtimeOptions,
-  taskQueue,
   type Agent
 } from "../data";
 import {
@@ -51,7 +38,11 @@ type DashboardPageProps = {
 };
 
 export function DashboardPage({ data, loading = false, error = "", onRefresh }: DashboardPageProps) {
-  const liveAgents = data?.agents.length ? data.agents : agents;
+  const isInitialLoading = loading && !data;
+  const isRefreshing = loading && Boolean(data);
+  const liveAgents = data?.agents ?? [];
+  const controlTasks = data?.control.tasks ?? [];
+  const nodeHealthRows = buildNodeHealthRows(data, liveAgents);
   const onlineAgents = data?.overview.agentsOnline ?? liveAgents.filter((agent) => agent.status === "online").length;
   const totalUplink = liveAgents.reduce((sum, agent) => sum + agent.uplinkMbps, 0);
   const totalDownlink = liveAgents.reduce((sum, agent) => sum + agent.downlinkMbps, 0);
@@ -64,15 +55,24 @@ export function DashboardPage({ data, loading = false, error = "", onRefresh }: 
     ? Math.round(liveAgents.reduce((sum, agent) => sum + agent.memory, 0) / liveAgents.length)
     : 0;
   const kpis = [
-    { label: "Online agents", value: `${onlineAgents} / ${data?.overview.agentsTotal ?? liveAgents.length}`, delta: data?.overview.version ?? "Fixture fallback" },
+    { label: "Online agents", value: `${onlineAgents} / ${data?.overview.agentsTotal ?? liveAgents.length}`, delta: data?.overview.version ?? "No live snapshot" },
     { label: "Avg CPU", value: `${avgCPU}%`, delta: "Live heartbeat" },
     { label: "Avg memory", value: `${avgMemory}%`, delta: "Runtime sample" },
     { label: "Up / Down total", value: `${totalUplink} / ${totalDownlink} Mbps`, delta: "Live sample" },
     { label: "Traffic used", value: `${usedTraffic} GB`, delta: `Quota ${quotaTraffic} GB` }
   ];
 
+  if (isInitialLoading) {
+    return (
+      <div className="dashboard" aria-busy="true">
+        <DashboardSkeletonPage />
+      </div>
+    );
+  }
+
   return (
-    <div className="dashboard">
+    <div className={`dashboard${isRefreshing ? " is-refreshing" : ""}`} aria-busy={loading}>
+      {isRefreshing ? <span className="refresh-rail" aria-hidden="true" /> : null}
       {error ? (
         <section className="notice-row">
           <strong>{error}</strong>
@@ -81,7 +81,6 @@ export function DashboardPage({ data, loading = false, error = "", onRefresh }: 
           </button>
         </section>
       ) : null}
-      {loading ? <DashboardSkeleton /> : null}
       <section className="kpi-grid" id="overview">
         {kpis.map((kpi) => (
           <article className="kpi-card" key={kpi.label}>
@@ -106,12 +105,16 @@ export function DashboardPage({ data, loading = false, error = "", onRefresh }: 
           <form className="dispatch-form">
             <label>
               Agent
-              <select defaultValue={liveAgents[0]?.id}>
-                {liveAgents.map((agent) => (
-                  <option value={agent.id} key={agent.id}>
-                    {agent.name} - {agent.region}
-                  </option>
-                ))}
+              <select defaultValue={liveAgents[0]?.id ?? ""} disabled={!liveAgents.length}>
+                {liveAgents.length ? (
+                  liveAgents.map((agent) => (
+                    <option value={agent.id} key={agent.id}>
+                      {agent.name} - {agent.region}
+                    </option>
+                  ))
+                ) : (
+                  <option value="">No agents available</option>
+                )}
               </select>
             </label>
             <label>
@@ -149,8 +152,8 @@ export function DashboardPage({ data, loading = false, error = "", onRefresh }: 
             ))}
           </div>
           <div className="protocol-strip" aria-label="Runtime service control stages">
-            {runtimeApplyStages.map((stage) => (
-              <span key={stage}>{runtimeApplyStageLabel[stage]}</span>
+            {["Render", "Install", "Apply", "Reload", "Health", "Rollback"].map((stage) => (
+              <span key={stage}>{stage}</span>
             ))}
           </div>
         </section>
@@ -158,118 +161,72 @@ export function DashboardPage({ data, loading = false, error = "", onRefresh }: 
         <section className="panel" id="queue">
           <div className="section-heading compact">
             <h2>Runtime service queue</h2>
-            <button className="ghost-button">Pause queue</button>
+            <button className="ghost-button" disabled={!data}>
+              Pause queue
+            </button>
           </div>
           <div className="task-list">
-            {taskQueue.map((task) => {
-              const taskState = getDeployTaskState(task);
-              const runtimeApply = getDeployRuntimeApply(task);
-              const progress = getTaskProgress(task);
-
-              return (
-                <article className="task-item" key={task.id}>
-                  <div className="task-item-head">
-                    <div>
-                      <strong>{task.action}</strong>
-                      <span>
-                        {task.agentName} - {getRuntimeLabel(task.runtime)} - {task.protocol}
-                      </span>
+            {controlTasks.length ? (
+              controlTasks.slice(0, 5).map((task) => {
+                const tone = taskTone(task.status);
+                return (
+                  <article className="task-item" key={task.id}>
+                    <div className="task-item-head">
+                      <div>
+                        <strong>{formatServiceStatus(task.type)}</strong>
+                        <span>{taskAgentLabel(task.agentId, liveAgents)}</span>
+                      </div>
+                      <small>{formatTime(task.updatedAt ?? task.createdAt)}</small>
                     </div>
-                    <small>{task.eta ?? taskState.status}</small>
-                  </div>
-                  <div className="progress">
-                    <span
-                      className={`progress-${taskState.status}`}
-                      style={{ width: `${progress}%` }}
-                    />
-                  </div>
-                  <div className="task-meta">
-                    <span>{task.id}</span>
-                    <TaskStatePill status={taskState.status} />
-                    <span>{runtimeApply.runtimeVersion}</span>
-                    <span>{formatServiceStatus(runtimeApply.serviceStatus)}</span>
-                    <span>{formatServiceStatus(runtimeApply.serviceMode)} mode</span>
-                    <span>{runtimeApply.runtimeManaged ? "OU-UI managed" : "External service"}</span>
-                    <span>
-                      {runtimeApply.rollbackAvailable
-                        ? "Rollback available"
-                        : "Rollback unavailable"}
-                    </span>
-                    <span>Retries {taskState.retryCount}</span>
-                  </div>
-                  <div className="task-runtime-detail">
-                    <div>
-                      <span>Control stage</span>
-                      <strong>{runtimeApplyStageLabel[runtimeApply.currentStage]}</strong>
+                    <div className="progress">
+                      <span
+                        className={`progress-${tone}`}
+                        style={{ width: `${controlTaskProgress(task)}%` }}
+                      />
                     </div>
-                    <div>
-                      <span>Unit path</span>
-                      <strong title={runtimeApply.unitPath}>{runtimeApply.unitPath}</strong>
+                    <div className="task-meta">
+                      <span>{task.id}</span>
+                      <span className={`task-state task-state-${tone}`}>{task.status}</span>
+                      <span>Attempts {task.attempts}</span>
                     </div>
-                    <div>
-                      <span>Config dir</span>
-                      <strong title={runtimeApply.configDir}>{runtimeApply.configDir}</strong>
-                    </div>
-                    <div>
-                      <span>Config path</span>
-                      <strong title={runtimeApply.configPath}>{runtimeApply.configPath}</strong>
-                    </div>
-                    <div>
-                      <span>Reload</span>
-                      <strong title={runtimeApply.reloadInfo}>
-                        {formatServiceStatus(runtimeApply.reloadStatus)}
-                      </strong>
-                    </div>
-                    <div>
-                      <span>Restart</span>
-                      <strong title={runtimeApply.restartInfo}>
-                        {formatServiceStatus(runtimeApply.restartStatus)}
-                      </strong>
-                    </div>
-                    <div>
-                      <span>Health</span>
-                      <strong title={runtimeApply.healthInfo}>
-                        {formatServiceStatus(runtimeApply.healthStatus)}
-                      </strong>
-                    </div>
-                  </div>
-                  <RuntimeApplyPipeline apply={runtimeApply} />
-                  {runtimeApply.failureStage ? (
-                    <p className="task-reason">
-                      Failed stage: {runtimeApplyStageLabel[runtimeApply.failureStage]}
-                    </p>
-                  ) : null}
-                  {taskState.failureReason ? (
-                    <p className="task-reason">
-                      Failure reason: {taskState.failureReason}
-                    </p>
-                  ) : null}
-                </article>
-              );
-            })}
+                    {task.lastError ? (
+                      <p className="task-reason">Failure reason: {task.lastError}</p>
+                    ) : null}
+                  </article>
+                );
+              })
+            ) : (
+              <p className="empty-state">No runtime tasks yet</p>
+            )}
           </div>
         </section>
       </div>
 
       <AnalyticsPanel agents={liveAgents} traffic={data?.control.traffic ?? []} />
 
-      <V3ControlCenter data={data} agents={liveAgents} onRefresh={onRefresh} />
+      <V3ControlCenter data={data} agents={liveAgents} loading={loading} onRefresh={onRefresh} />
 
       <section className="panel" id="nodes">
         <div className="section-heading compact">
           <h2>Node health</h2>
-          <button className="ghost-button">Export snapshot</button>
+          <button className="ghost-button" disabled={!data}>
+            Export snapshot
+          </button>
         </div>
         <div className="node-list">
-          {nodeHealthRows.map((node) => (
-            <article className="node-item" key={node.name}>
-              <div>
-                <strong>{node.name}</strong>
-                <span>{node.detail}</span>
-              </div>
-              <small>{node.value}</small>
-            </article>
-          ))}
+          {nodeHealthRows.length ? (
+            nodeHealthRows.map((node) => (
+              <article className="node-item" key={node.name}>
+                <div>
+                  <strong>{node.name}</strong>
+                  <span>{node.detail}</span>
+                </div>
+                <small>{node.value}</small>
+              </article>
+            ))
+          ) : (
+            <p className="empty-state">No node samples yet</p>
+          )}
         </div>
       </section>
 
@@ -286,26 +243,181 @@ function formatServiceStatus(status: string): string {
     .replace(/\b[a-z]/g, (letter) => letter.toUpperCase());
 }
 
-function DashboardSkeleton() {
+function DashboardSkeletonPage() {
   return (
-    <section className="skeleton-grid" aria-label="Dashboard loading">
-      {Array.from({ length: 5 }).map((_, index) => (
-        <span key={index} />
+    <>
+      <section className="kpi-grid skeleton-kpi-grid" aria-label="Dashboard overview loading">
+        {Array.from({ length: 5 }).map((_, index) => (
+          <article className="kpi-card skeleton-card" key={index}>
+            <span className="skeleton-line tiny" />
+            <span className="skeleton-line large" />
+            <span className="skeleton-line small" />
+          </article>
+        ))}
+      </section>
+
+      <section className="panel skeleton-panel" aria-label="Agent monitor loading">
+        <SkeletonHeader />
+        <div className="agent-grid">
+          {Array.from({ length: 4 }).map((_, index) => (
+            <article className="agent-card skeleton-card" key={index}>
+              <div className="agent-card-head">
+                <div className="skeleton-stack">
+                  <span className="skeleton-line medium" />
+                  <span className="skeleton-line small" />
+                </div>
+                <span className="skeleton-pill" />
+              </div>
+              <div className="skeleton-chip-row">
+                {Array.from({ length: 5 }).map((__, chipIndex) => (
+                  <span className="skeleton-pill" key={chipIndex} />
+                ))}
+              </div>
+              <span className="skeleton-block medium" />
+              <span className="skeleton-block medium" />
+              <div className="agent-bars">
+                <span className="skeleton-line wide" />
+                <span className="skeleton-line wide" />
+              </div>
+              <div className="agent-metrics">
+                <span className="skeleton-block short" />
+                <span className="skeleton-block short" />
+                <span className="skeleton-block short" />
+              </div>
+            </article>
+          ))}
+        </div>
+      </section>
+
+      <div className="split-grid">
+        <section className="panel skeleton-panel" aria-label="Dispatch loading">
+          <SkeletonHeader />
+          <div className="dispatch-form">
+            {Array.from({ length: 4 }).map((_, index) => (
+              <span className="skeleton-block input" key={index} />
+            ))}
+          </div>
+          <div className="skeleton-chip-row">
+            {Array.from({ length: 5 }).map((_, index) => (
+              <span className="skeleton-pill" key={index} />
+            ))}
+          </div>
+        </section>
+        <section className="panel skeleton-panel" aria-label="Runtime queue loading">
+          <SkeletonHeader compact />
+          <SkeletonList count={3} />
+        </section>
+      </div>
+
+      <section className="panel chart-panel skeleton-panel" aria-label="Metrics loading">
+        <SkeletonHeader />
+        <div className="traffic-wave-grid">
+          <span className="skeleton-block chart" />
+          <div className="signal-stack">
+            <span className="skeleton-block signal" />
+            <span className="skeleton-block signal" />
+            <span className="skeleton-block signal" />
+          </div>
+        </div>
+      </section>
+
+      <section className="v3-grid" aria-label="V3 control center loading">
+        <div className="control-banner skeleton-card">
+          <div className="skeleton-stack">
+            <span className="skeleton-line tiny" />
+            <span className="skeleton-line xlarge" />
+          </div>
+          <div className="control-banner-metrics">
+            {Array.from({ length: 4 }).map((_, index) => (
+              <span className="skeleton-block metric" key={index} />
+            ))}
+          </div>
+        </div>
+        <div className="control-two">
+          {Array.from({ length: 2 }).map((_, index) => (
+            <section className="panel skeleton-panel" key={index}>
+              <SkeletonHeader />
+              <div className="control-form">
+                {Array.from({ length: 5 }).map((__, inputIndex) => (
+                  <span className="skeleton-block input" key={inputIndex} />
+                ))}
+              </div>
+              <SkeletonMiniTable />
+            </section>
+          ))}
+        </div>
+      </section>
+
+      <section className="panel skeleton-panel" aria-label="Node health loading">
+        <SkeletonHeader compact />
+        <SkeletonList count={3} />
+      </section>
+
+      <section className="panel skeleton-panel" aria-label="Agent detail loading">
+        <SkeletonHeader compact />
+        <div className="skeleton-table">
+          {Array.from({ length: 6 }).map((_, index) => (
+            <span className="skeleton-line wide" key={index} />
+          ))}
+        </div>
+      </section>
+    </>
+  );
+}
+
+function SkeletonHeader({ compact = false }: { compact?: boolean }) {
+  return (
+    <div className={`section-heading${compact ? " compact" : ""}`}>
+      <div className="skeleton-stack">
+        <span className="skeleton-line tiny" />
+        <span className="skeleton-line large" />
+      </div>
+      <span className="skeleton-block button" />
+    </div>
+  );
+}
+
+function SkeletonList({ count }: { count: number }) {
+  return (
+    <div className="task-list">
+      {Array.from({ length: count }).map((_, index) => (
+        <article className="task-item skeleton-card" key={index}>
+          <span className="skeleton-line wide" />
+          <span className="skeleton-line medium" />
+          <span className="skeleton-block progress" />
+        </article>
       ))}
-    </section>
+    </div>
+  );
+}
+
+function SkeletonMiniTable() {
+  return (
+    <div className="mini-table">
+      {Array.from({ length: 4 }).map((_, index) => (
+        <div className="mini-row" key={index}>
+          <span className="skeleton-line wide" />
+          <span className="skeleton-line wide" />
+          <span className="skeleton-line wide" />
+        </div>
+      ))}
+    </div>
   );
 }
 
 function V3ControlCenter({
   data,
   agents,
+  loading,
   onRefresh
 }: {
   data: DashboardDTO | null;
   agents: Agent[];
+  loading?: boolean;
   onRefresh?: () => void;
 }) {
   const control = data?.control;
+  const controlsDisabled = loading || !control;
   const [busy, setBusy] = useState("");
   const [message, setMessage] = useState("");
   const [apiKey, setApiKey] = useState("");
@@ -570,10 +682,10 @@ function V3ControlCenter({
               <h2>Geo rules and host tuning</h2>
             </div>
             <div className="button-row">
-              <button className="ghost-button" disabled={Boolean(busy)} onClick={handleOptimize} type="button">
+              <button className="ghost-button" disabled={Boolean(busy) || controlsDisabled} onClick={handleOptimize} type="button">
                 BBR v3
               </button>
-              <button className="primary-button" disabled={Boolean(busy)} onClick={handleApplyRouting} type="button">
+              <button className="primary-button" disabled={Boolean(busy) || controlsDisabled} onClick={handleApplyRouting} type="button">
                 Apply
               </button>
             </div>
@@ -606,7 +718,7 @@ function V3ControlCenter({
                 <option value="proxy">Proxy</option>
               </select>
             </label>
-            <button className="primary-button" disabled={Boolean(busy)} type="submit">
+            <button className="primary-button" disabled={Boolean(busy) || controlsDisabled} type="submit">
               Save rule
             </button>
           </form>
@@ -647,7 +759,7 @@ function V3ControlCenter({
                 onChange={(event) => setLoadBalancer({ ...loadBalancer, healthCheckInterval: Number(event.target.value) })}
               />
             </label>
-            <button className="primary-button" disabled={Boolean(busy)} type="submit">
+            <button className="primary-button" disabled={Boolean(busy) || controlsDisabled} type="submit">
               Create group
             </button>
           </form>
@@ -700,11 +812,11 @@ function V3ControlCenter({
               Events
               <input value={webhook.eventTypes} onChange={(event) => setWebhook({ ...webhook, eventTypes: event.target.value })} />
             </label>
-            <button className="primary-button" disabled={Boolean(busy)} type="submit">
+            <button className="primary-button" disabled={Boolean(busy) || controlsDisabled} type="submit">
               Save hook
             </button>
           </form>
-          <WebhookList busy={Boolean(busy)} onTest={handleTestWebhook} webhooks={control?.webhooks ?? []} />
+          <WebhookList busy={Boolean(busy) || controlsDisabled} onTest={handleTestWebhook} webhooks={control?.webhooks ?? []} />
           <AlertList alerts={control?.alerts ?? []} />
         </section>
 
@@ -714,7 +826,7 @@ function V3ControlCenter({
               <p className="eyebrow">Subscriptions</p>
               <h2>External node aggregation</h2>
             </div>
-            <button className="ghost-button" disabled={Boolean(busy)} onClick={handleImportFirstSubscription} type="button">
+            <button className="ghost-button" disabled={Boolean(busy) || controlsDisabled} onClick={handleImportFirstSubscription} type="button">
               Import first
             </button>
           </div>
@@ -731,7 +843,7 @@ function V3ControlCenter({
               Inline content
               <textarea value={subscription.content} onChange={(event) => setSubscription({ ...subscription, content: event.target.value })} />
             </label>
-            <button className="primary-button" disabled={Boolean(busy)} type="submit">
+            <button className="primary-button" disabled={Boolean(busy) || controlsDisabled} type="submit">
               Add source
             </button>
           </form>
@@ -759,7 +871,7 @@ function V3ControlCenter({
               Provider URL
               <input value={clash.providerUrl} onChange={(event) => setClash({ ...clash, providerUrl: event.target.value })} />
             </label>
-            <button className="primary-button" disabled={Boolean(busy)} type="submit">
+            <button className="primary-button" disabled={Boolean(busy) || controlsDisabled} type="submit">
               Generate YAML
             </button>
           </form>
@@ -799,7 +911,7 @@ function V3ControlCenter({
                   onChange={(event) => setTenant({ ...tenant, maxConnections: Number(event.target.value) })}
                 />
               </label>
-              <button className="primary-button" disabled={Boolean(busy)} type="submit">
+              <button className="primary-button" disabled={Boolean(busy) || controlsDisabled} type="submit">
                 Create tenant
               </button>
             </form>
@@ -820,7 +932,7 @@ function V3ControlCenter({
                 Node access
                 <input value={panelUser.nodeAccess} onChange={(event) => setPanelUser({ ...panelUser, nodeAccess: event.target.value })} />
               </label>
-              <button className="ghost-button" disabled={Boolean(busy)} type="submit">
+              <button className="ghost-button" disabled={Boolean(busy) || controlsDisabled} type="submit">
                 Create user
               </button>
             </form>
@@ -853,7 +965,7 @@ function V3ControlCenter({
               Scopes
               <input value={keyForm.scopes} onChange={(event) => setKeyForm({ ...keyForm, scopes: event.target.value })} />
             </label>
-            <button className="primary-button" disabled={Boolean(busy)} type="submit">
+            <button className="primary-button" disabled={Boolean(busy) || controlsDisabled} type="submit">
               Issue key
             </button>
           </form>
@@ -872,7 +984,7 @@ function V3ControlCenter({
               Question
               <textarea value={question} onChange={(event) => setQuestion(event.target.value)} />
             </label>
-            <button className="primary-button" disabled={Boolean(busy)} type="submit">
+            <button className="primary-button" disabled={Boolean(busy) || controlsDisabled} type="submit">
               Ask
             </button>
           </form>
@@ -891,6 +1003,51 @@ function V3ControlCenter({
       </div>
     </section>
   );
+}
+
+function buildNodeHealthRows(data: DashboardDTO | null, agents: Agent[]) {
+  if (!data) {
+    return [];
+  }
+  const nodes = data.control.nodes;
+  const traffic = data.control.traffic;
+  const healthyNodes = nodes.filter((node) => !["failed", "offline", "disabled"].includes(node.status)).length;
+  const trafficSources = new Set(traffic.map((item) => item.nodeId)).size;
+  const openAlerts = data.control.alerts.filter((alert) => !alert.delivered).length;
+  const onlineAgents = agents.filter((agent) => agent.status === "online").length;
+  return [
+    {
+      name: "Managed node health",
+      value: `${healthyNodes} / ${nodes.length}`,
+      detail: "Latest service status from the control plane"
+    },
+    {
+      name: "Traffic sample sources",
+      value: String(trafficSources),
+      detail: "Per-node upload/download counters"
+    },
+    {
+      name: "Dispatchable agents",
+      value: `${onlineAgents} / ${data.overview.agentsTotal}`,
+      detail: `${openAlerts} open alerts`
+    }
+  ];
+}
+
+function taskAgentLabel(agentId: string, agents: Agent[]): string {
+  const agent = agents.find((item) => item.id === agentId);
+  return agent ? `${agent.name} - ${agent.region}` : agentId || "Unassigned agent";
+}
+
+function controlTaskProgress(task: ControlTask): number {
+  const tone = taskTone(task.status);
+  if (tone === "success" || tone === "failed") {
+    return 100;
+  }
+  if (tone === "running") {
+    return Math.min(92, 48 + task.attempts * 12);
+  }
+  return 18;
 }
 
 function MetricBox({ label, value }: { label: string; value: string }) {

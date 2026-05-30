@@ -25,11 +25,12 @@ export function LoginPage({ loading = false, error = "", onLogin }: LoginPagePro
             <span>Node Control Console</span>
           </div>
         </div>
-        <form className="login-form" onSubmit={handleSubmit}>
+        <form aria-busy={loading} className="login-form" onSubmit={handleSubmit}>
           <label>
             Username
             <input
               autoComplete="username"
+              disabled={loading}
               onChange={(event) => setUsername(event.target.value)}
               placeholder="admin"
               value={username}
@@ -39,6 +40,7 @@ export function LoginPage({ loading = false, error = "", onLogin }: LoginPagePro
             Password
             <input
               autoComplete="current-password"
+              disabled={loading}
               onChange={(event) => setPassword(event.target.value)}
               placeholder="Enter password"
               type="password"
@@ -48,7 +50,7 @@ export function LoginPage({ loading = false, error = "", onLogin }: LoginPagePro
           {error ? <p className="login-error">{error}</p> : null}
           <div className="form-row">
             <label className="checkline">
-              <input type="checkbox" defaultChecked />
+              <input type="checkbox" defaultChecked disabled={loading} />
               Keep signed in
             </label>
             <a href="#reset">Reset password</a>
