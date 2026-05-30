@@ -34,10 +34,12 @@ import {
   createWebhook,
   importSubscription,
   optimizeAgent,
+  testWebhook,
   type AlertEvent,
   type ClashProfile,
   type ControlTask,
-  type DashboardDTO
+  type DashboardDTO,
+  type WebhookEndpoint
 } from "../api";
 import { useMemo, useState, type FormEvent } from "react";
 
@@ -443,6 +445,10 @@ function V3ControlCenter({
     );
   }
 
+  function handleTestWebhook(id: string) {
+    void runAction("Webhook test", () => testWebhook(id));
+  }
+
   function handleCreateSubscription(event: FormEvent) {
     event.preventDefault();
     void runAction("Subscription", () =>
@@ -683,6 +689,14 @@ function V3ControlCenter({
               <input value={webhook.url} onChange={(event) => setWebhook({ ...webhook, url: event.target.value })} />
             </label>
             <label>
+              Secret
+              <input value={webhook.secret} onChange={(event) => setWebhook({ ...webhook, secret: event.target.value })} />
+            </label>
+            <label>
+              Chat ID
+              <input value={webhook.chatId} onChange={(event) => setWebhook({ ...webhook, chatId: event.target.value })} />
+            </label>
+            <label>
               Events
               <input value={webhook.eventTypes} onChange={(event) => setWebhook({ ...webhook, eventTypes: event.target.value })} />
             </label>
@@ -690,6 +704,7 @@ function V3ControlCenter({
               Save hook
             </button>
           </form>
+          <WebhookList busy={Boolean(busy)} onTest={handleTestWebhook} webhooks={control?.webhooks ?? []} />
           <AlertList alerts={control?.alerts ?? []} />
         </section>
 
@@ -927,6 +942,35 @@ function AlertList({ alerts }: { alerts: AlertEvent[] }) {
         </article>
       ))}
       {alerts.length === 0 ? <p className="empty-state">No alerts yet</p> : null}
+    </div>
+  );
+}
+
+function WebhookList({
+  webhooks,
+  busy,
+  onTest
+}: {
+  webhooks: WebhookEndpoint[];
+  busy: boolean;
+  onTest: (id: string) => void;
+}) {
+  return (
+    <div className="webhook-list">
+      {webhooks.slice(0, 5).map((hook) => (
+        <article key={hook.id}>
+          <div>
+            <strong>{hook.name}</strong>
+            <span>
+              {hook.kind} / {hook.enabled ? "enabled" : "paused"}
+            </span>
+          </div>
+          <button className="ghost-button" disabled={busy || !hook.enabled} onClick={() => onTest(hook.id)} type="button">
+            Test
+          </button>
+        </article>
+      ))}
+      {webhooks.length === 0 ? <p className="empty-state">No webhooks yet</p> : null}
     </div>
   );
 }

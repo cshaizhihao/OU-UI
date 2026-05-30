@@ -82,6 +82,12 @@ type nodeTrafficRequest struct {
 	Samples []agentruntime.NodeTrafficMetric `json:"samples"`
 }
 
+const (
+	defaultAgentTrafficRateAlertBps = 128 << 20
+	defaultNodeTrafficRateAlertBps  = 64 << 20
+	defaultNodeConnectionAlertCount = 10000
+)
+
 func (h Handler) agentNodeTraffic(c *gin.Context) {
 	var req nodeTrafficRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -143,9 +149,33 @@ func (h Handler) evaluateAgentAlerts(agentID string, metrics agentruntime.Runtim
 			h.createAlert("warning", "agent", agentID, "traffic.quota.warning", "Agent traffic limit is above 90 percent", map[string]any{"usedBytes": used, "limitBytes": agent.TrafficLimit})
 		}
 	}
+	agentRate := metrics.NetRxRateBps + metrics.NetTxRateBps
+	if agentRate >= defaultAgentTrafficRateAlertBps {
+		h.createAlert("critical", "agent", agentID, "agent.traffic.overload", "Agent traffic rate is overloaded", map[string]any{
+			"rxRateBps":    metrics.NetRxRateBps,
+			"txRateBps":    metrics.NetTxRateBps,
+			"totalRateBps": agentRate,
+			"thresholdBps": defaultAgentTrafficRateAlertBps,
+		})
+	}
 	for _, sample := range metrics.NodeTraffic {
-		if sample.Connections >= 10000 {
-			h.createAlert("warning", "node", sample.NodeID, "node.connections.high", "Node connection count is high", map[string]any{"connections": sample.Connections})
+		nodeID := strings.TrimSpace(sample.NodeID)
+		if nodeID == "" {
+			continue
+		}
+		if sample.Connections >= defaultNodeConnectionAlertCount {
+			h.createAlert("warning", "node", nodeID, "node.connections.high", "Node connection count is high", map[string]any{"connections": sample.Connections, "threshold": defaultNodeConnectionAlertCount})
+		}
+		nodeRate := sample.RxRateBps + sample.TxRateBps
+		if nodeRate >= defaultNodeTrafficRateAlertBps {
+			h.createAlert("critical", "node", nodeID, "node.traffic.overload", "Node traffic rate is overloaded", map[string]any{
+				"agentId":      agentID,
+				"nodeName":     sample.Name,
+				"rxRateBps":    sample.RxRateBps,
+				"txRateBps":    sample.TxRateBps,
+				"totalRateBps": nodeRate,
+				"thresholdBps": defaultNodeTrafficRateAlertBps,
+			})
 		}
 	}
 }
@@ -1037,12 +1067,16 @@ func (h Handler) createWebhook(c *gin.Context) {
 	hook := models.WebhookEndpoint{
 		ID:         "whk_" + randomHex(8),
 		Name:       strings.TrimSpace(req.Name),
-		Kind:       defaultNonEmpty(req.Kind, "generic"),
+		Kind:       normalizeWebhookKind(req.Kind),
 		URL:        strings.TrimSpace(req.URL),
 		Secret:     strings.TrimSpace(req.Secret),
 		ChatID:     strings.TrimSpace(req.ChatID),
 		Enabled:    enabled,
-		EventTypes: mustJSON(req.EventTypes),
+		EventTypes: mustJSON(compactStringList(req.EventTypes)),
+	}
+	if err := validateWebhookConfig(hook); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
 	}
 	if err := h.db.Create(&hook).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "create webhook failed"})
@@ -1067,7 +1101,7 @@ func (h Handler) updateWebhook(c *gin.Context) {
 		hook.Name = strings.TrimSpace(req.Name)
 	}
 	if req.Kind != "" {
-		hook.Kind = strings.TrimSpace(req.Kind)
+		hook.Kind = normalizeWebhookKind(req.Kind)
 	}
 	if req.URL != "" {
 		hook.URL = strings.TrimSpace(req.URL)
@@ -1082,7 +1116,11 @@ func (h Handler) updateWebhook(c *gin.Context) {
 		hook.Enabled = *req.Enabled
 	}
 	if req.EventTypes != nil {
-		hook.EventTypes = mustJSON(req.EventTypes)
+		hook.EventTypes = mustJSON(compactStringList(req.EventTypes))
+	}
+	if err := validateWebhookConfig(hook); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
 	}
 	if err := h.db.Save(&hook).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "update webhook failed"})
@@ -1153,19 +1191,53 @@ func webhookAccepts(hook models.WebhookEndpoint, eventType string) bool {
 	return false
 }
 
+func normalizeWebhookKind(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "telegram":
+		return "telegram"
+	case "serverchan", "server-chan", "server_chan":
+		return "serverchan"
+	case "", "generic", "webhook":
+		return "generic"
+	default:
+		return strings.ToLower(strings.TrimSpace(value))
+	}
+}
+
+func validateWebhookConfig(hook models.WebhookEndpoint) error {
+	switch normalizeWebhookKind(hook.Kind) {
+	case "telegram":
+		if strings.TrimSpace(hook.Secret) == "" || strings.TrimSpace(hook.ChatID) == "" {
+			return fmt.Errorf("telegram token and chatId are required")
+		}
+	case "serverchan":
+		if strings.TrimSpace(hook.URL) == "" {
+			return fmt.Errorf("serverchan url is required")
+		}
+	default:
+		if strings.TrimSpace(hook.URL) == "" {
+			return fmt.Errorf("webhook url is required")
+		}
+	}
+	return nil
+}
+
 func deliverWebhook(hook models.WebhookEndpoint, event models.AlertEvent) error {
 	client := &http.Client{Timeout: 6 * time.Second}
 	message := fmt.Sprintf("[%s] %s: %s", strings.ToUpper(event.Severity), event.EventType, event.Message)
-	switch strings.ToLower(strings.TrimSpace(hook.Kind)) {
+	switch normalizeWebhookKind(hook.Kind) {
 	case "telegram":
 		token := strings.TrimSpace(hook.Secret)
 		if token == "" || hook.ChatID == "" {
 			return fmt.Errorf("telegram token and chatId are required")
 		}
 		endpoint := "https://api.telegram.org/bot" + token + "/sendMessage"
+		if strings.TrimSpace(hook.URL) != "" {
+			endpoint = strings.TrimSpace(hook.URL)
+		}
 		payload := map[string]any{"chat_id": hook.ChatID, "text": message}
 		return postJSON(client, endpoint, payload, "")
-	case "serverchan", "server-chan":
+	case "serverchan":
 		if hook.URL == "" {
 			return fmt.Errorf("serverchan url is required")
 		}
@@ -1573,12 +1645,26 @@ func (h Handler) apiDocs(c *gin.Context) {
 			"/load-balancers/{id}/entry":        gin.H{"get": gin.H{"summary": "Resolve the current HA entry decision"}},
 			"/load-balancers/{id}/health":       gin.H{"post": gin.H{"summary": "Update HA member latency, loss, and health"}},
 			"/webhooks":                         gin.H{"get": gin.H{"summary": "List alert webhooks"}, "post": gin.H{"summary": "Create alert webhook"}},
+			"/webhooks/{id}":                    gin.H{"patch": gin.H{"summary": "Update alert webhook"}},
+			"/webhooks/{id}/test":               gin.H{"post": gin.H{"summary": "Send test alert through a webhook"}},
+			"/alerts":                           gin.H{"get": gin.H{"summary": "List alert events and delivery status"}},
 			"/subscriptions":                    gin.H{"get": gin.H{"summary": "List external subscriptions"}, "post": gin.H{"summary": "Create external subscription"}},
 			"/clash/profiles":                   gin.H{"get": gin.H{"summary": "List Clash profiles"}, "post": gin.H{"summary": "Create Clash profile"}},
 			"/tenants":                          gin.H{"get": gin.H{"summary": "List tenants"}, "post": gin.H{"summary": "Create tenant"}},
 			"/users":                            gin.H{"get": gin.H{"summary": "List panel users"}, "post": gin.H{"summary": "Create panel user"}},
 			"/api-keys":                         gin.H{"post": gin.H{"summary": "Create API key"}},
 			"/copilot/ask":                      gin.H{"post": gin.H{"summary": "Ask AI operations copilot"}},
+		},
+		"x-ou-ui-alert-events": []string{
+			"cpu.high",
+			"cpu.overload",
+			"agent.traffic.overload",
+			"traffic.quota.warning",
+			"traffic.quota.exceeded",
+			"node.traffic.overload",
+			"node.connections.high",
+			"agent.offline",
+			"agent.error",
 		},
 	})
 }

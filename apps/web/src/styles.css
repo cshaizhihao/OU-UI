@@ -1281,6 +1281,7 @@ td span {
 
 .mini-table,
 .alert-list,
+.webhook-list,
 .profile-list,
 .incident-list {
   display: grid;
@@ -1312,11 +1313,23 @@ td span {
 }
 
 .alert-item,
+.webhook-list article,
 .profile-list article,
 .incident-list article {
   display: grid;
   gap: 7px;
   padding: 10px;
+}
+
+.webhook-list article {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+}
+
+.webhook-list span {
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 800;
 }
 
 .alert-item {
@@ -1325,6 +1338,7 @@ td span {
 }
 
 .alert-item strong,
+.webhook-list strong,
 .profile-list strong,
 .incident-list strong {
   overflow: hidden;

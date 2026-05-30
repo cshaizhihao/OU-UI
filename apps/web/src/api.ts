@@ -349,6 +349,12 @@ export async function createWebhook(input: {
   });
 }
 
+export async function testWebhook(id: string) {
+  return request<{ ok: boolean }>(`/webhooks/${id}/test`, {
+    method: "POST"
+  });
+}
+
 export async function createSubscription(input: {
   name: string;
   url?: string;
