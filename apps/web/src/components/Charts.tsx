@@ -1,53 +1,165 @@
-const uplinkBars = [52, 68, 44, 76, 61, 88, 73, 58, 82, 64, 79, 70];
-const queueBars = [28, 35, 31, 44, 39, 53, 48, 56, 51, 62];
+import * as echarts from "echarts/core";
+import { GridComponent, TooltipComponent, type GridComponentOption, type TooltipComponentOption } from "echarts/components";
+import { LineChart, type LineSeriesOption } from "echarts/charts";
+import { CanvasRenderer } from "echarts/renderers";
+import { useEffect, useMemo, useRef } from "react";
+import type { NodeTraffic } from "../api";
+import type { Agent } from "../data";
 
-export function AnalyticsPanel() {
+echarts.use([GridComponent, TooltipComponent, LineChart, CanvasRenderer]);
+
+type ChartOption = echarts.ComposeOption<GridComponentOption | TooltipComponentOption | LineSeriesOption>;
+
+type AnalyticsPanelProps = {
+  agents: Agent[];
+  traffic: NodeTraffic[];
+};
+
+export function AnalyticsPanel({ agents, traffic }: AnalyticsPanelProps) {
+  const chartRef = useRef<HTMLDivElement>(null);
+  const series = useMemo(() => buildTrafficSeries(agents, traffic), [agents, traffic]);
+  const peak = Math.max(...series.values, 1);
+  const activeNodes = new Set(traffic.map((item) => item.nodeId)).size || agents.length;
+  const totalMbps = series.values.at(-1) ?? 0;
+
+  useEffect(() => {
+    if (!chartRef.current) {
+      return;
+    }
+    const chart = echarts.init(chartRef.current, undefined, { renderer: "canvas" });
+    const option: ChartOption = {
+      grid: { left: 10, right: 16, top: 18, bottom: 18, containLabel: true },
+      tooltip: {
+        trigger: "axis",
+        backgroundColor: "rgba(15, 23, 42, 0.92)",
+        borderColor: "rgba(148, 163, 184, 0.24)",
+        textStyle: { color: "#f8fafc", fontWeight: 700 },
+        valueFormatter: (value) => `${Number(value).toFixed(1)} Mbps`
+      },
+      xAxis: {
+        type: "category",
+        boundaryGap: false,
+        data: series.labels,
+        axisLine: { lineStyle: { color: "rgba(100, 116, 139, 0.28)" } },
+        axisTick: { show: false },
+        axisLabel: { color: "#64748b", fontWeight: 700 }
+      },
+      yAxis: {
+        type: "value",
+        min: 0,
+        max: Math.ceil(peak * 1.22),
+        splitLine: { lineStyle: { color: "rgba(148, 163, 184, 0.18)" } },
+        axisLabel: { color: "#64748b", formatter: "{value}" }
+      },
+      series: [
+        {
+          name: "Throughput",
+          type: "line",
+          smooth: 0.42,
+          symbol: "circle",
+          symbolSize: 7,
+          showSymbol: false,
+          lineStyle: {
+            width: 4,
+            color: {
+              type: "linear",
+              x: 0,
+              y: 0,
+              x2: 1,
+              y2: 0,
+              colorStops: [
+                { offset: 0, color: "#14b8a6" },
+                { offset: 0.55, color: "#38bdf8" },
+                { offset: 1, color: "#f43f5e" }
+              ]
+            }
+          },
+          areaStyle: {
+            color: {
+              type: "linear",
+              x: 0,
+              y: 0,
+              x2: 0,
+              y2: 1,
+              colorStops: [
+                { offset: 0, color: "rgba(20, 184, 166, 0.32)" },
+                { offset: 0.48, color: "rgba(56, 189, 248, 0.14)" },
+                { offset: 1, color: "rgba(244, 63, 94, 0)" }
+              ]
+            }
+          },
+          data: series.values
+        }
+      ]
+    };
+    chart.setOption(option);
+    const onResize = () => chart.resize();
+    window.addEventListener("resize", onResize);
+    return () => {
+      window.removeEventListener("resize", onResize);
+      chart.dispose();
+    };
+  }, [peak, series]);
+
   return (
     <section className="panel chart-panel" id="metrics">
       <div className="section-heading">
         <div>
           <p className="eyebrow">Observability</p>
-          <h2>Link throughput and queue trend</h2>
+          <h2>Traffic wave and runtime pressure</h2>
         </div>
         <select aria-label="Time range">
-          <option>Last 12 hours</option>
-          <option>Last 24 hours</option>
+          <option>Last 12 samples</option>
+          <option>Last 24 samples</option>
           <option>Last 7 days</option>
         </select>
       </div>
-      <div className="chart-grid">
-        <div className="bar-chart" aria-label="Uplink throughput bar chart">
-          {uplinkBars.map((height, index) => (
-            <span key={index} style={{ height: `${height}%` }} />
-          ))}
+      <div className="traffic-wave-grid">
+        <div className="traffic-wave-card">
+          <div ref={chartRef} className="traffic-wave" aria-label="ECharts traffic waveform" />
         </div>
-        <div className="line-card">
-          <svg viewBox="0 0 320 150" role="img" aria-label="Queue trend line chart">
-            <defs>
-              <linearGradient id="lineFill" x1="0" x2="0" y1="0" y2="1">
-                <stop offset="0%" stopColor="#0891b2" stopOpacity="0.26" />
-                <stop offset="100%" stopColor="#0891b2" stopOpacity="0" />
-              </linearGradient>
-            </defs>
-            <path
-              d="M8 122 L40 104 L74 110 L108 82 L142 92 L176 64 L210 70 L244 44 L278 54 L312 30"
-              fill="none"
-              stroke="#0891b2"
-              strokeLinecap="round"
-              strokeWidth="4"
-            />
-            <path
-              d="M8 122 L40 104 L74 110 L108 82 L142 92 L176 64 L210 70 L244 44 L278 54 L312 30 L312 150 L8 150 Z"
-              fill="url(#lineFill)"
-            />
-          </svg>
-          <div className="spark-row">
-            {queueBars.map((value, index) => (
-              <span key={index} style={{ height: `${value}%` }} />
-            ))}
-          </div>
+        <div className="signal-stack">
+          <SignalMetric label="Current" value={`${totalMbps.toFixed(1)} Mbps`} />
+          <SignalMetric label="Peak" value={`${peak.toFixed(1)} Mbps`} />
+          <SignalMetric label="Sources" value={String(activeNodes)} />
         </div>
       </div>
     </section>
   );
+}
+
+function SignalMetric({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <span>{label}</span>
+      <strong>{value}</strong>
+    </div>
+  );
+}
+
+function buildTrafficSeries(agents: Agent[], traffic: NodeTraffic[]) {
+  const samples = traffic.slice(0, 12).reverse();
+  if (samples.length > 0) {
+    return {
+      labels: samples.map((item) => shortTime(item.collectedAt)),
+      values: samples.map((item) => bytesPerSecondToMbps(item.rxRateBps + item.txRateBps))
+    };
+  }
+  const fallback = agents.slice(0, 12);
+  return {
+    labels: fallback.map((agent) => agent.name),
+    values: fallback.map((agent) => agent.uplinkMbps + agent.downlinkMbps)
+  };
+}
+
+function bytesPerSecondToMbps(value: number): number {
+  return Math.round(((Number(value) || 0) * 8) / 100_000) / 10;
+}
+
+function shortTime(value: string): string {
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) {
+    return value || "--";
+  }
+  return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }

@@ -251,7 +251,7 @@ export function DashboardPage({ data, loading = false, error = "", onRefresh }: 
         </section>
       </div>
 
-      <AnalyticsPanel />
+      <AnalyticsPanel agents={liveAgents} traffic={data?.control.traffic ?? []} />
 
       <V3ControlCenter data={data} agents={liveAgents} onRefresh={onRefresh} />
 
