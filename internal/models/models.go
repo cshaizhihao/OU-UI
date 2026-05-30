@@ -100,7 +100,7 @@ type Task struct {
 	MaxAttempts    int            `json:"maxAttempts"`
 	LastError      string         `json:"lastError"`
 	StartedAt      *time.Time     `json:"startedAt"`
-	LeaseExpiresAt *time.Time  `json:"leaseExpiresAt"`
+	LeaseExpiresAt *time.Time     `json:"leaseExpiresAt"`
 	FinishedAt     *time.Time     `json:"finishedAt"`
 	CreatedAt      time.Time      `gorm:"index:idx_tasks_agent_status_created" json:"createdAt"`
 	UpdatedAt      time.Time      `json:"updatedAt"`
@@ -240,10 +240,10 @@ type ClashProfile struct {
 	Name          string         `json:"name"`
 	RuleProviders datatypes.JSON `json:"ruleProviders"`
 	ProxyGroups   datatypes.JSON `json:"proxyGroups"`
-	RoutingRules   datatypes.JSON `json:"routingRules"`
-	GeneratedYAML  string         `json:"generatedYaml"`
-	CreatedAt      time.Time      `json:"createdAt"`
-	UpdatedAt      time.Time      `json:"updatedAt"`
+	RoutingRules  datatypes.JSON `json:"routingRules"`
+	GeneratedYAML string         `json:"generatedYaml"`
+	CreatedAt     time.Time      `json:"createdAt"`
+	UpdatedAt     time.Time      `json:"updatedAt"`
 }
 
 type Tenant struct {
@@ -253,6 +253,7 @@ type Tenant struct {
 	Role                string         `json:"role"`
 	NodeAccess          datatypes.JSON `json:"nodeAccess"`
 	MonthlyTrafficQuota uint64         `json:"monthlyTrafficQuota"`
+	PerNodeTrafficQuota uint64         `json:"perNodeTrafficQuota"`
 	MaxConnections      int            `json:"maxConnections"`
 	CreatedAt           time.Time      `json:"createdAt"`
 	UpdatedAt           time.Time      `json:"updatedAt"`
@@ -267,6 +268,7 @@ type PanelUser struct {
 	Status              string         `json:"status"`
 	NodeAccess          datatypes.JSON `json:"nodeAccess"`
 	MonthlyTrafficQuota uint64         `json:"monthlyTrafficQuota"`
+	PerNodeTrafficQuota uint64         `json:"perNodeTrafficQuota"`
 	MaxConnections      int            `json:"maxConnections"`
 	CreatedAt           time.Time      `json:"createdAt"`
 	UpdatedAt           time.Time      `json:"updatedAt"`

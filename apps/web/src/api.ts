@@ -155,6 +155,7 @@ export type Tenant = {
   role: string;
   nodeAccess?: string[];
   monthlyTrafficQuota?: number;
+  perNodeTrafficQuota?: number;
   maxConnections?: number;
 };
 
@@ -166,6 +167,7 @@ export type PanelUser = {
   status: string;
   nodeAccess?: string[];
   monthlyTrafficQuota?: number;
+  perNodeTrafficQuota?: number;
   maxConnections?: number;
 };
 
@@ -417,6 +419,7 @@ export async function createTenant(input: {
   role: string;
   nodeAccess: string[];
   monthlyTrafficQuota: number;
+  perNodeTrafficQuota: number;
   maxConnections: number;
 }) {
   return request<Tenant>("/tenants", {
@@ -433,6 +436,7 @@ export async function createPanelUser(input: {
   status: string;
   nodeAccess: string[];
   monthlyTrafficQuota: number;
+  perNodeTrafficQuota: number;
   maxConnections: number;
 }) {
   return request<PanelUser>("/users", {

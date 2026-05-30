@@ -467,6 +467,7 @@ function V3ControlCenter({
     name: "Ops tenant",
     nodeAccess: agents[0]?.id ?? "",
     monthlyTrafficGb: 1024,
+    perNodeTrafficGb: 256,
     maxConnections: 2000
   });
   const [panelUser, setPanelUser] = useState({
@@ -475,6 +476,7 @@ function V3ControlCenter({
     tenantId: "",
     nodeAccess: agents[0]?.id ?? "",
     monthlyTrafficGb: 256,
+    perNodeTrafficGb: 64,
     maxConnections: 500
   });
   const [keyForm, setKeyForm] = useState({
@@ -647,6 +649,7 @@ function V3ControlCenter({
         role: "operator",
         nodeAccess: parseCSV(tenant.nodeAccess),
         monthlyTrafficQuota: gbToBytes(tenant.monthlyTrafficGb),
+        perNodeTrafficQuota: gbToBytes(tenant.perNodeTrafficGb),
         maxConnections: Number(tenant.maxConnections) || 0
       })
     );
@@ -663,6 +666,7 @@ function V3ControlCenter({
         status: "active",
         nodeAccess: parseCSV(panelUser.nodeAccess),
         monthlyTrafficQuota: gbToBytes(panelUser.monthlyTrafficGb),
+        perNodeTrafficQuota: gbToBytes(panelUser.perNodeTrafficGb),
         maxConnections: Number(panelUser.maxConnections) || 0
       })
     );
@@ -993,6 +997,14 @@ function V3ControlCenter({
                 />
               </label>
               <label>
+                Node GB quota
+                <input
+                  type="number"
+                  value={tenant.perNodeTrafficGb}
+                  onChange={(event) => setTenant({ ...tenant, perNodeTrafficGb: Number(event.target.value) })}
+                />
+              </label>
+              <label>
                 Connections
                 <input
                   type="number"
@@ -1021,14 +1033,42 @@ function V3ControlCenter({
                 Node access
                 <input value={panelUser.nodeAccess} onChange={(event) => setPanelUser({ ...panelUser, nodeAccess: event.target.value })} />
               </label>
+              <label>
+                GB quota
+                <input
+                  type="number"
+                  value={panelUser.monthlyTrafficGb}
+                  onChange={(event) => setPanelUser({ ...panelUser, monthlyTrafficGb: Number(event.target.value) })}
+                />
+              </label>
+              <label>
+                Node GB quota
+                <input
+                  type="number"
+                  value={panelUser.perNodeTrafficGb}
+                  onChange={(event) => setPanelUser({ ...panelUser, perNodeTrafficGb: Number(event.target.value) })}
+                />
+              </label>
+              <label>
+                Connections
+                <input
+                  type="number"
+                  value={panelUser.maxConnections}
+                  onChange={(event) => setPanelUser({ ...panelUser, maxConnections: Number(event.target.value) })}
+                />
+              </label>
               <button className="ghost-button" disabled={Boolean(busy) || controlsDisabled} type="submit">
                 Create user
               </button>
             </form>
           </div>
           <MiniTable
-            columns={["Tenant", "Role", "Quota"]}
-            rows={(control?.tenants ?? []).slice(0, 4).map((item) => [item.name, item.role, formatBytes(item.monthlyTrafficQuota ?? 0)])}
+            columns={["Tenant", "Quota", "Node quota"]}
+            rows={(control?.tenants ?? []).slice(0, 4).map((item) => [
+              item.name,
+              formatBytes(item.monthlyTrafficQuota ?? 0),
+              formatBytes(item.perNodeTrafficQuota ?? 0)
+            ])}
           />
         </section>
       </div>

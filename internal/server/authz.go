@@ -71,6 +71,102 @@ func canAccessNode(c *gin.Context, id string) bool {
 	return false
 }
 
+type quotaPolicy struct {
+	MonthlyTrafficQuota uint64
+	PerNodeTrafficQuota uint64
+	MaxConnections      int
+	NodeAccess          []string
+}
+
+func (h Handler) quotaPolicyForRequest(c *gin.Context) quotaPolicy {
+	role, _ := c.Get("role")
+	if strings.EqualFold(strings.TrimSpace(fmt.Sprint(role)), "owner") {
+		return quotaPolicy{}
+	}
+	policy := quotaPolicy{}
+	if allowed, limited := nodeAccessFilter(c); limited {
+		policy.NodeAccess = allowed
+	}
+	tenantID := strings.TrimSpace(fmt.Sprint(mustContextValue(c, "tenantID")))
+	var tenant models.Tenant
+	if tenantID != "" {
+		if err := h.db.Where("id = ? AND status = ?", tenantID, "active").First(&tenant).Error; err == nil {
+			policy.MonthlyTrafficQuota = tenant.MonthlyTrafficQuota
+			policy.PerNodeTrafficQuota = tenant.PerNodeTrafficQuota
+			policy.MaxConnections = tenant.MaxConnections
+			if len(policy.NodeAccess) == 0 {
+				policy.NodeAccess = stringListFromJSON(tenant.NodeAccess)
+			}
+		}
+	}
+	authKind := strings.TrimSpace(fmt.Sprint(mustContextValue(c, "authKind")))
+	if authKind != "panel" {
+		return policy
+	}
+	actor := strings.TrimSpace(fmt.Sprint(mustContextValue(c, "actor")))
+	var user models.PanelUser
+	if actor == "" || h.db.Where("id = ? AND status = ?", actor, "active").First(&user).Error != nil {
+		return policy
+	}
+	policy.MonthlyTrafficQuota = minPositiveQuota(policy.MonthlyTrafficQuota, user.MonthlyTrafficQuota)
+	policy.PerNodeTrafficQuota = minPositiveQuota(policy.PerNodeTrafficQuota, user.PerNodeTrafficQuota)
+	policy.MaxConnections = minPositiveInt(policy.MaxConnections, user.MaxConnections)
+	if userAccess := stringListFromJSON(user.NodeAccess); len(userAccess) > 0 {
+		policy.NodeAccess = userAccess
+	}
+	return policy
+}
+
+func (h Handler) quotaBlockReason(c *gin.Context) string {
+	policy := h.quotaPolicyForRequest(c)
+	if policy.MonthlyTrafficQuota == 0 && policy.PerNodeTrafficQuota == 0 && policy.MaxConnections == 0 {
+		return ""
+	}
+	total, connections, perNode := h.quotaUsage(policy.NodeAccess)
+	if policy.MonthlyTrafficQuota > 0 && total >= policy.MonthlyTrafficQuota {
+		return "monthly traffic quota exceeded"
+	}
+	if policy.MaxConnections > 0 && connections >= policy.MaxConnections {
+		return "connection quota exceeded"
+	}
+	if policy.PerNodeTrafficQuota > 0 {
+		for _, used := range perNode {
+			if used >= policy.PerNodeTrafficQuota {
+				return "per-node traffic quota exceeded"
+			}
+		}
+	}
+	return ""
+}
+
+func (h Handler) quotaUsage(nodeAccess []string) (uint64, int, map[string]uint64) {
+	var samples []models.NodeTrafficSample
+	query := h.db.Order("collected_at desc").Limit(5000)
+	nodeAccess = compactStringList(nodeAccess)
+	if len(nodeAccess) > 0 && !containsWildcard(nodeAccess) {
+		query = query.Where("node_id IN ? OR agent_id IN ?", nodeAccess, nodeAccess)
+	}
+	if err := query.Find(&samples).Error; err != nil {
+		return 0, 0, map[string]uint64{}
+	}
+	latest := map[string]models.NodeTrafficSample{}
+	for _, sample := range samples {
+		if _, ok := latest[sample.NodeID]; !ok {
+			latest[sample.NodeID] = sample
+		}
+	}
+	perNode := map[string]uint64{}
+	var total uint64
+	var connections int
+	for nodeID, sample := range latest {
+		used := sample.RxBytes + sample.TxBytes
+		perNode[nodeID] = used
+		total += used
+		connections += sample.Connections
+	}
+	return total, connections, perNode
+}
+
 func authorizePanelRequest(c *gin.Context) bool {
 	if role, _ := c.Get("role"); strings.EqualFold(strings.TrimSpace(fmt.Sprint(role)), "owner") {
 		return true
@@ -91,6 +187,37 @@ func authorizePanelRequest(c *gin.Context) bool {
 		return false
 	}
 	return scopeAllows(scopes, required)
+}
+
+func mustContextValue(c *gin.Context, key string) any {
+	value, _ := c.Get(key)
+	return value
+}
+
+func minPositiveQuota(current, next uint64) uint64 {
+	if current == 0 {
+		return next
+	}
+	if next == 0 {
+		return current
+	}
+	if next < current {
+		return next
+	}
+	return current
+}
+
+func minPositiveInt(current, next int) int {
+	if current == 0 {
+		return next
+	}
+	if next == 0 {
+		return current
+	}
+	if next < current {
+		return next
+	}
+	return current
 }
 
 func scopeAllows(scopes []string, required string) bool {

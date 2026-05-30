@@ -144,11 +144,17 @@ func (h Handler) login(c *gin.Context) {
 func (h Handler) overview(c *gin.Context) {
 	var agents []models.Agent
 	var nodes int64
-	if err := h.db.Find(&agents).Error; err != nil {
+	agentQuery := h.db
+	nodeQuery := h.db.Model(&models.Node{})
+	if allowed, limited := nodeAccessFilter(c); limited {
+		agentQuery = agentQuery.Where("id IN ?", allowed)
+		nodeQuery = nodeQuery.Where("id IN ? OR agent_id IN ?", allowed, allowed)
+	}
+	if err := agentQuery.Find(&agents).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "query overview failed"})
 		return
 	}
-	h.db.Model(&models.Node{}).Count(&nodes)
+	nodeQuery.Count(&nodes)
 	var online int64
 	for i := range agents {
 		h.decorateAgent(&agents[i])
@@ -371,7 +377,11 @@ func (h Handler) agentHeartbeat(c *gin.Context) {
 func (h Handler) listTasks(c *gin.Context) {
 	h.expireLeases()
 	var tasks []models.Task
-	if err := h.db.Order("created_at desc").Find(&tasks).Error; err != nil {
+	query := h.db.Order("created_at desc")
+	if allowed, limited := nodeAccessFilter(c); limited {
+		query = query.Where("agent_id IN ?", allowed)
+	}
+	if err := query.Find(&tasks).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "query tasks failed"})
 		return
 	}
@@ -410,6 +420,10 @@ func (h Handler) createTask(c *gin.Context) {
 	}
 	if !canAccessNode(c, req.AgentID) {
 		c.JSON(http.StatusForbidden, gin.H{"error": "agent is outside current tenant access"})
+		return
+	}
+	if reason := h.quotaBlockReason(c); reason != "" {
+		c.JSON(http.StatusForbidden, gin.H{"error": reason})
 		return
 	}
 	payload, _ := json.Marshal(req.Payload)
@@ -590,6 +604,10 @@ func (h Handler) createNode(c *gin.Context) {
 	}
 	if !canAccessNode(c, req.AgentID) {
 		c.JSON(http.StatusForbidden, gin.H{"error": "agent is outside current tenant access"})
+		return
+	}
+	if reason := h.quotaBlockReason(c); reason != "" {
+		c.JSON(http.StatusForbidden, gin.H{"error": reason})
 		return
 	}
 	specJSON, _ := json.Marshal(spec)

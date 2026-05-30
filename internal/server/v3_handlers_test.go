@@ -573,6 +573,89 @@ func TestAPIKeyReadScopeCannotMutate(t *testing.T) {
 	}
 }
 
+func TestPanelUserRBACFiltersOverviewAndEnforcesNodeQuota(t *testing.T) {
+	db := openTestDB(t)
+	cfg := config.ServerConfig{
+		SecurePath:               "/ou-ui",
+		AdminUser:                "admin",
+		AdminPassword:            "password",
+		JWTSecret:                "test-secret",
+		AgentJoinToken:           "join",
+		AgentOfflineAfterSeconds: 45,
+	}
+	now := time.Now().UTC()
+	agents := []models.Agent{
+		{ID: "agt_allowed", Name: "Allowed", Status: models.AgentStatusOnline, AuthStatus: models.AgentAuthActive, LastSeenAt: &now, Capabilities: datatypes.JSON(`["task-polling","noop"]`), AgentTokenSHA: hashSecret("allowed")},
+		{ID: "agt_denied", Name: "Denied", Status: models.AgentStatusOnline, AuthStatus: models.AgentAuthActive, LastSeenAt: &now, Capabilities: datatypes.JSON(`["task-polling","noop"]`), AgentTokenSHA: hashSecret("denied")},
+	}
+	if err := db.Create(&agents).Error; err != nil {
+		t.Fatalf("seed agents: %v", err)
+	}
+	if err := db.Create(&models.Node{ID: "nod_allowed", AgentID: "agt_allowed", Name: "Allowed node", Runtime: "xray", Protocol: "vless", Status: "ready"}).Error; err != nil {
+		t.Fatalf("seed node: %v", err)
+	}
+	if err := db.Create(&models.NodeTrafficSample{NodeID: "nod_allowed", AgentID: "agt_allowed", RxBytes: 100, TxBytes: 0, Connections: 1, CollectedAt: now}).Error; err != nil {
+		t.Fatalf("seed traffic: %v", err)
+	}
+	if err := db.Create(&models.Tenant{
+		ID:                  "ten_rbac",
+		Name:                "RBAC",
+		Status:              "active",
+		Role:                "operator",
+		NodeAccess:          datatypes.JSON(`["agt_allowed"]`),
+		PerNodeTrafficQuota: 100,
+	}).Error; err != nil {
+		t.Fatalf("seed tenant: %v", err)
+	}
+	if err := db.Create(&models.PanelUser{
+		ID:          "usr_rbac",
+		TenantID:    "ten_rbac",
+		Username:    "subuser",
+		PasswordSHA: hashSecret("secret"),
+		Role:        "operator",
+		Status:      "active",
+	}).Error; err != nil {
+		t.Fatalf("seed panel user: %v", err)
+	}
+	router := NewRouter(cfg, db)
+
+	loginReq := httptest.NewRequest(http.MethodPost, "/ou-ui/api/v1/auth/login", bytes.NewBufferString(`{"username":"subuser","password":"secret"}`))
+	loginReq.Header.Set("Content-Type", "application/json")
+	loginResp := httptest.NewRecorder()
+	router.ServeHTTP(loginResp, loginReq)
+	if loginResp.Code != http.StatusOK {
+		t.Fatalf("expected subuser login, got %d: %s", loginResp.Code, loginResp.Body.String())
+	}
+	var loginBody struct {
+		Token string `json:"token"`
+	}
+	if err := json.Unmarshal(loginResp.Body.Bytes(), &loginBody); err != nil || loginBody.Token == "" {
+		t.Fatalf("decode login token: %v %q", err, loginResp.Body.String())
+	}
+
+	overviewReq := httptest.NewRequest(http.MethodGet, "/ou-ui/api/v1/overview", nil)
+	overviewReq.Header.Set("Authorization", "Bearer "+loginBody.Token)
+	overviewResp := httptest.NewRecorder()
+	router.ServeHTTP(overviewResp, overviewReq)
+	if overviewResp.Code != http.StatusOK {
+		t.Fatalf("expected filtered overview, got %d: %s", overviewResp.Code, overviewResp.Body.String())
+	}
+	var overview map[string]any
+	_ = json.Unmarshal(overviewResp.Body.Bytes(), &overview)
+	if int(overview["agentsTotal"].(float64)) != 1 || int(overview["nodesTotal"].(float64)) != 1 {
+		t.Fatalf("expected overview to be tenant-filtered, got %+v", overview)
+	}
+
+	taskReq := httptest.NewRequest(http.MethodPost, "/ou-ui/api/v1/tasks", bytes.NewBufferString(`{"agentId":"agt_allowed","type":"noop"}`))
+	taskReq.Header.Set("Authorization", "Bearer "+loginBody.Token)
+	taskReq.Header.Set("Content-Type", "application/json")
+	taskResp := httptest.NewRecorder()
+	router.ServeHTTP(taskResp, taskReq)
+	if taskResp.Code != http.StatusForbidden || !strings.Contains(taskResp.Body.String(), "per-node traffic quota exceeded") {
+		t.Fatalf("expected per-node quota block, got %d: %s", taskResp.Code, taskResp.Body.String())
+	}
+}
+
 func openTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 	db, err := store.Open(filepath.Join(t.TempDir(), "ou-ui-test.db"))

@@ -62,6 +62,10 @@ func (h Handler) createNetworkOptimization(c *gin.Context) {
 		c.JSON(http.StatusForbidden, gin.H{"error": "agent is outside current tenant access"})
 		return
 	}
+	if reason := h.quotaBlockReason(c); reason != "" {
+		c.JSON(http.StatusForbidden, gin.H{"error": reason})
+		return
+	}
 	body, _ := json.Marshal(payload)
 	task := models.Task{
 		ID:          "tsk_" + randomHex(8),
@@ -248,26 +252,7 @@ func (h Handler) evaluateTenantQuotas() {
 	}
 	for _, tenant := range tenants {
 		nodeAccess := stringListFromJSON(tenant.NodeAccess)
-		var samples []models.NodeTrafficSample
-		query := h.db.Order("collected_at desc").Limit(5000)
-		if len(nodeAccess) > 0 && !containsWildcard(nodeAccess) {
-			query = query.Where("node_id IN ? OR agent_id IN ?", nodeAccess, nodeAccess)
-		}
-		if err := query.Find(&samples).Error; err != nil {
-			continue
-		}
-		latest := map[string]models.NodeTrafficSample{}
-		for _, sample := range samples {
-			if _, ok := latest[sample.NodeID]; !ok {
-				latest[sample.NodeID] = sample
-			}
-		}
-		var used uint64
-		var connections int
-		for _, sample := range latest {
-			used += sample.RxBytes + sample.TxBytes
-			connections += sample.Connections
-		}
+		used, connections, perNode := h.quotaUsage(nodeAccess)
 		if tenant.MonthlyTrafficQuota > 0 {
 			ratio := float64(used) / float64(tenant.MonthlyTrafficQuota)
 			if used >= tenant.MonthlyTrafficQuota {
@@ -278,6 +263,40 @@ func (h Handler) evaluateTenantQuotas() {
 		}
 		if tenant.MaxConnections > 0 && connections >= tenant.MaxConnections {
 			h.createAlert("critical", "tenant", tenant.ID, "tenant.connections.exceeded", "Tenant connection quota exceeded", map[string]any{"connections": connections, "maxConnections": tenant.MaxConnections})
+		}
+		if tenant.PerNodeTrafficQuota > 0 {
+			for nodeID, nodeUsed := range perNode {
+				if nodeUsed >= tenant.PerNodeTrafficQuota {
+					h.createAlert("critical", "tenant", tenant.ID, "tenant.node.quota.exceeded", "Tenant per-node traffic quota exceeded", map[string]any{"nodeId": nodeID, "usedBytes": nodeUsed, "quotaBytes": tenant.PerNodeTrafficQuota})
+				}
+			}
+		}
+	}
+	var users []models.PanelUser
+	if err := h.db.Where("status = ? AND (monthly_traffic_quota > 0 OR per_node_traffic_quota > 0 OR max_connections > 0)", "active").Find(&users).Error; err != nil {
+		return
+	}
+	for _, user := range users {
+		nodeAccess := stringListFromJSON(user.NodeAccess)
+		if len(nodeAccess) == 0 && user.TenantID != "" {
+			var tenant models.Tenant
+			if err := h.db.Select("node_access").First(&tenant, "id = ?", user.TenantID).Error; err == nil {
+				nodeAccess = stringListFromJSON(tenant.NodeAccess)
+			}
+		}
+		used, connections, perNode := h.quotaUsage(nodeAccess)
+		if user.MonthlyTrafficQuota > 0 && used >= user.MonthlyTrafficQuota {
+			h.createAlert("critical", "user", user.ID, "user.quota.exceeded", "Panel user monthly traffic quota exceeded", map[string]any{"usedBytes": used, "quotaBytes": user.MonthlyTrafficQuota})
+		}
+		if user.MaxConnections > 0 && connections >= user.MaxConnections {
+			h.createAlert("critical", "user", user.ID, "user.connections.exceeded", "Panel user connection quota exceeded", map[string]any{"connections": connections, "maxConnections": user.MaxConnections})
+		}
+		if user.PerNodeTrafficQuota > 0 {
+			for nodeID, nodeUsed := range perNode {
+				if nodeUsed >= user.PerNodeTrafficQuota {
+					h.createAlert("critical", "user", user.ID, "user.node.quota.exceeded", "Panel user per-node traffic quota exceeded", map[string]any{"nodeId": nodeID, "usedBytes": nodeUsed, "quotaBytes": user.PerNodeTrafficQuota})
+				}
+			}
 		}
 	}
 }
@@ -490,6 +509,10 @@ type routingApplyRequest struct {
 func (h Handler) applyRouting(c *gin.Context) {
 	var req routingApplyRequest
 	_ = c.ShouldBindJSON(&req)
+	if reason := h.quotaBlockReason(c); reason != "" {
+		c.JSON(http.StatusForbidden, gin.H{"error": reason})
+		return
+	}
 	config, err := h.xrayRoutingConfig()
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "query routing rules failed"})
@@ -1846,6 +1869,7 @@ type tenantRequest struct {
 	Role                string   `json:"role"`
 	NodeAccess          []string `json:"nodeAccess"`
 	MonthlyTrafficQuota uint64   `json:"monthlyTrafficQuota"`
+	PerNodeTrafficQuota uint64   `json:"perNodeTrafficQuota"`
 	MaxConnections      int      `json:"maxConnections"`
 }
 
@@ -1862,6 +1886,7 @@ func (h Handler) createTenant(c *gin.Context) {
 		Role:                defaultNonEmpty(req.Role, "operator"),
 		NodeAccess:          mustJSON(req.NodeAccess),
 		MonthlyTrafficQuota: req.MonthlyTrafficQuota,
+		PerNodeTrafficQuota: req.PerNodeTrafficQuota,
 		MaxConnections:      req.MaxConnections,
 	}
 	if err := h.db.Create(&tenant).Error; err != nil {
@@ -1889,6 +1914,7 @@ type panelUserRequest struct {
 	Status              string   `json:"status"`
 	NodeAccess          []string `json:"nodeAccess"`
 	MonthlyTrafficQuota uint64   `json:"monthlyTrafficQuota"`
+	PerNodeTrafficQuota uint64   `json:"perNodeTrafficQuota"`
 	MaxConnections      int      `json:"maxConnections"`
 }
 
@@ -1907,6 +1933,7 @@ func (h Handler) createPanelUser(c *gin.Context) {
 		Status:              defaultNonEmpty(req.Status, "active"),
 		NodeAccess:          mustJSON(req.NodeAccess),
 		MonthlyTrafficQuota: req.MonthlyTrafficQuota,
+		PerNodeTrafficQuota: req.PerNodeTrafficQuota,
 		MaxConnections:      req.MaxConnections,
 	}
 	if err := h.db.Create(&user).Error; err != nil {
