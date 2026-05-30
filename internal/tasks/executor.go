@@ -3,6 +3,7 @@ package tasks
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -15,6 +16,7 @@ import (
 	"github.com/cshaizhihao/OU-UI/internal/provider"
 	"github.com/cshaizhihao/OU-UI/internal/providers"
 	"github.com/cshaizhihao/OU-UI/internal/tuning"
+	"github.com/cshaizhihao/OU-UI/internal/xray"
 	"gorm.io/datatypes"
 )
 
@@ -105,6 +107,10 @@ func (e Executor) deployNode(task Task) Result {
 	rendered, err := runtimeProvider.Render(payload.Spec)
 	if err != nil {
 		return failed("render provider config", err)
+	}
+	rendered, err = e.mergeCachedRouting(payload.Spec.Runtime, rendered)
+	if err != nil {
+		return failed("merge cached routing", err)
 	}
 	stages := []provider.StageResult{
 		deploy.StageOK(provider.DeployStageRender, "provider config rendered", renderStarted),
@@ -296,22 +302,197 @@ func (e Executor) applyRouting(task Task) Result {
 	if err := json.Unmarshal(task.Payload, &payload); err != nil {
 		return failed("decode routing payload", err)
 	}
+	var applyPayload struct {
+		Runtime string          `json:"runtime"`
+		Routing json.RawMessage `json:"routing"`
+	}
+	if err := json.Unmarshal(task.Payload, &applyPayload); err != nil {
+		return failed("decode routing payload", err)
+	}
+	runtimeName := strings.ToLower(strings.TrimSpace(applyPayload.Runtime))
+	if runtimeName == "" {
+		runtimeName = string(provider.RuntimeXray)
+	}
+	if runtimeName != string(provider.RuntimeXray) {
+		return failed("validate routing payload", fmt.Errorf("unsupported routing runtime %q", applyPayload.Runtime))
+	}
+	if len(applyPayload.Routing) == 0 || !json.Valid(applyPayload.Routing) {
+		return failed("validate routing payload", fmt.Errorf("routing is required"))
+	}
+	var routingDoc map[string]any
+	if err := json.Unmarshal(applyPayload.Routing, &routingDoc); err != nil {
+		return failed("decode xray routing", err)
+	}
 	routingDir := filepath.Join(e.DataDir, "routing")
 	if err := os.MkdirAll(routingDir, 0o700); err != nil {
 		return failed("prepare routing directory", err)
 	}
-	path := filepath.Join(routingDir, "xray-routing.json")
+	path := routingPayloadPath(e.DataDir)
 	content, _ := json.MarshalIndent(payload, "", "  ")
-	if err := os.WriteFile(path, content, 0o600); err != nil {
+	previousRouting, hadPreviousRouting, err := readOptionalFile(path)
+	if err != nil {
+		return failed("read previous routing config", err)
+	}
+	if err := writeFileAtomic(path, content, 0o600); err != nil {
 		return failed("write routing config", err)
+	}
+	patchedNodes, restartedServices, err := e.patchManagedXrayRouting(routingDoc)
+	if err != nil {
+		_ = restoreOptionalFile(path, previousRouting, hadPreviousRouting, 0o600)
+		return failed("apply xray routing", err)
 	}
 	return Result{
 		Status: models.TaskStatusSucceeded,
 		Result: map[string]any{
-			"routingPath": path,
-			"runtime":     payload["runtime"],
-			"appliedAt":   time.Now().UTC().Format(time.RFC3339),
+			"routingPath":       path,
+			"runtime":           runtimeName,
+			"patchedNodes":      patchedNodes,
+			"restartedServices": restartedServices,
+			"appliedAt":         time.Now().UTC().Format(time.RFC3339),
 		},
-		Logs: "routing config stored for runtime reload",
+		Logs: "routing config applied to managed xray runtimes",
 	}
+}
+
+func (e Executor) patchManagedXrayRouting(routingDoc map[string]any) (int, []string, error) {
+	routingContent, err := json.Marshal(routingDoc)
+	if err != nil {
+		return 0, nil, err
+	}
+	nodes, err := agentruntime.LoadManagedNodes(e.DataDir)
+	if err != nil {
+		return 0, nil, err
+	}
+	patched := 0
+	restarted := []string{}
+	for _, node := range nodes {
+		if strings.ToLower(strings.TrimSpace(node.Runtime)) != string(provider.RuntimeXray) {
+			continue
+		}
+		if strings.TrimSpace(node.ConfigPath) == "" || strings.TrimSpace(node.ServiceName) == "" {
+			continue
+		}
+		previousContent, err := patchXrayConfigRouting(node.ConfigPath, routingContent)
+		if err != nil {
+			return patched, restarted, err
+		}
+		if e.Runner == nil {
+			_ = writeFileAtomic(node.ConfigPath, previousContent, 0o600)
+			return patched, restarted, fmt.Errorf("command runner is required to restart %s", node.ServiceName)
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+		if _, err := e.Runner.LookPath("systemctl"); err != nil {
+			cancel()
+			_ = writeFileAtomic(node.ConfigPath, previousContent, 0o600)
+			return patched, restarted, err
+		}
+		if _, err := e.Runner.Run(ctx, "systemctl", "restart", node.ServiceName); err != nil {
+			cancel()
+			_ = writeFileAtomic(node.ConfigPath, previousContent, 0o600)
+			rollbackCtx, rollbackCancel := context.WithTimeout(context.Background(), 20*time.Second)
+			_, _ = e.Runner.Run(rollbackCtx, "systemctl", "restart", node.ServiceName)
+			rollbackCancel()
+			return patched, restarted, err
+		}
+		cancel()
+		patched++
+		restarted = append(restarted, node.ServiceName)
+	}
+	return patched, restarted, nil
+}
+
+func (e Executor) mergeCachedRouting(runtime provider.Runtime, rendered []byte) ([]byte, error) {
+	if runtime != provider.RuntimeXray {
+		return rendered, nil
+	}
+	content, err := os.ReadFile(routingPayloadPath(e.DataDir))
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return rendered, nil
+		}
+		return nil, err
+	}
+	var payload struct {
+		Routing json.RawMessage `json:"routing"`
+	}
+	if err := json.Unmarshal(content, &payload); err != nil {
+		return nil, err
+	}
+	if len(payload.Routing) == 0 {
+		return rendered, nil
+	}
+	return xray.MergeRoutingConfig(rendered, payload.Routing)
+}
+
+func patchXrayConfigRouting(path string, routingContent []byte) ([]byte, error) {
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	next, err := xray.MergeRoutingConfig(content, routingContent)
+	if err != nil {
+		return nil, err
+	}
+	if err := writeFileAtomic(path, next, 0o600); err != nil {
+		return nil, err
+	}
+	return content, nil
+}
+
+func routingPayloadPath(dataDir string) string {
+	if dataDir == "" {
+		dataDir = "/var/lib/ou-ui-agent"
+	}
+	return filepath.Join(dataDir, "routing", "xray-routing.json")
+}
+
+func readOptionalFile(path string) ([]byte, bool, error) {
+	content, err := os.ReadFile(path)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, false, nil
+		}
+		return nil, false, err
+	}
+	return content, true, nil
+}
+
+func restoreOptionalFile(path string, content []byte, exists bool, perm os.FileMode) error {
+	if !exists {
+		if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+		return nil
+	}
+	return writeFileAtomic(path, content, perm)
+}
+
+func writeFileAtomic(path string, content []byte, perm os.FileMode) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return err
+	}
+	tmp, err := os.CreateTemp(filepath.Dir(path), ".ou-ui-*.tmp")
+	if err != nil {
+		return err
+	}
+	tmpPath := tmp.Name()
+	defer os.Remove(tmpPath)
+	if _, err := tmp.Write(content); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if err := tmp.Chmod(perm); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	if err := os.Rename(tmpPath, path); err != nil {
+		if removeErr := os.Remove(path); removeErr != nil && !errors.Is(removeErr, os.ErrNotExist) {
+			return err
+		}
+		return os.Rename(tmpPath, path)
+	}
+	return nil
 }
