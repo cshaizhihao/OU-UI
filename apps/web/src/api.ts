@@ -1,4 +1,4 @@
-import type { Agent, AgentStatus, RuntimeRef } from "./data";
+import type { Agent, AgentStatus, Protocol, Runtime, RuntimeRef } from "./data";
 
 const tokenKey = "ou-ui-panel-token";
 
@@ -221,6 +221,21 @@ export type ControlTask = {
   updatedAt?: string;
 };
 
+export type CreateNodeInput = {
+  agentId: string;
+  name?: string;
+  runtime: Runtime | string;
+  protocol: Protocol | string;
+  listen: string;
+  port: number;
+  settings: Record<string, unknown>;
+};
+
+export type CreateNodeResponse = {
+  node: ManagedNode;
+  task: ControlTask;
+};
+
 export type ControlPlaneDTO = {
   nodes: ManagedNode[];
   traffic: NodeTraffic[];
@@ -328,6 +343,49 @@ export async function optimizeAgent(agentId: string) {
   return request<{ task: ControlTask }>(`/agents/${agentId}/network-optimization`, {
     method: "POST",
     body: JSON.stringify({ profile: "bbr-v3", allowKernelInstall: true, rebootPolicy: "manual", persist: true })
+  });
+}
+
+export function panelBaseURL(): string {
+  const base = apiBase().replace(/\/api\/v1$/, "");
+  return new URL(base || "/", window.location.origin).toString().replace(/\/$/, "");
+}
+
+export function agentInstallScriptURL(serverUrl = panelBaseURL()): string {
+  const url = new URL(`${apiBase()}/agents/install-script`, window.location.origin);
+  if (serverUrl) {
+    url.searchParams.set("serverUrl", serverUrl);
+  }
+  return url.toString();
+}
+
+export async function loadAgentInstallScript(serverUrl = panelBaseURL()): Promise<string> {
+  const headers = new Headers();
+  const token = getStoredToken();
+  if (token) {
+    headers.set("Authorization", `Bearer ${token}`);
+  }
+  const res = await fetch(agentInstallScriptURL(serverUrl), { headers });
+  if (res.status === 401) {
+    clearStoredToken();
+  }
+  if (!res.ok) {
+    const message = await readError(res);
+    throw new Error(message || `API request failed with ${res.status}`);
+  }
+  return res.text();
+}
+
+export function agentInstallCommand(serverUrl = panelBaseURL()): string {
+  const token = getStoredToken();
+  const auth = token ? ` -H "Authorization: Bearer ${token}"` : "";
+  return `curl -fsSL${auth} "${agentInstallScriptURL(serverUrl)}" | bash`;
+}
+
+export async function createNode(input: CreateNodeInput) {
+  return request<CreateNodeResponse>("/nodes", {
+    method: "POST",
+    body: JSON.stringify(input)
   });
 }
 

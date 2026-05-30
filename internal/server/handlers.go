@@ -71,7 +71,7 @@ type createNodeRequest struct {
 }
 
 func (h Handler) health(c *gin.Context) {
-	c.JSON(http.StatusOK, gin.H{"ok": true, "version": "v4.0.0"})
+	c.JSON(http.StatusOK, gin.H{"ok": true, "version": "v6.0.0"})
 }
 
 func (h Handler) login(c *gin.Context) {
@@ -166,7 +166,7 @@ func (h Handler) overview(c *gin.Context) {
 		"agentsTotal":  int64(len(agents)),
 		"agentsOnline": online,
 		"nodesTotal":   nodes,
-		"version":      "v4.0.0",
+		"version":      "v6.0.0",
 	})
 }
 

@@ -1,5 +1,11 @@
 import type { ReactNode } from "react";
 import type { SessionUser } from "../api";
+import {
+  primaryWorkspaceId,
+  professionalWorkspaceIds,
+  starterModeLabel,
+  workspaceModeLabel
+} from "../onboarding";
 
 export type Locale = "zh" | "en";
 export type ThemeMode = "light" | "dark";
@@ -32,16 +38,16 @@ export const workspaceItems: WorkspaceItem[] = [
     id: "overview",
     copy: {
       zh: {
-        label: "总览工作台",
-        eyebrow: "控制面总览",
-        title: "OU-UI 运维控制台",
-        description: "聚合 Agent、节点、告警和任务状态"
+        label: "开始",
+        eyebrow: "默认启动台",
+        title: "四步开通 OU-UI",
+        description: "接入服务器、创建节点、复制订阅、查看状态"
       },
       en: {
-        label: "Overview",
-        eyebrow: "Control Plane",
-        title: "OU-UI Operations Console",
-        description: "Unified view of Agents, nodes, alerts, and tasks"
+        label: "Start",
+        eyebrow: "Default Launchpad",
+        title: "Open OU-UI in four steps",
+        description: "Connect server, create node, copy subscription, check status"
       }
     }
   },
@@ -208,6 +214,11 @@ export function Shell({
 }: ShellProps) {
   const active = workspaceItems.find((item) => item.id === activeWorkspace) ?? workspaceItems[0];
   const activeCopy = active.copy[language];
+  const primaryWorkspace = workspaceItems.find((item) => item.id === primaryWorkspaceId) ?? workspaceItems[0];
+  const professionalWorkspaces = professionalWorkspaceIds
+    .map((id) => workspaceItems.find((item) => item.id === id))
+    .filter((item): item is WorkspaceItem => Boolean(item));
+  const professionalActive = professionalWorkspaceIds.some((id) => id === activeWorkspace);
 
   return (
     <div className="app-shell">
@@ -220,21 +231,35 @@ export function Shell({
           </div>
         </div>
         <nav className="nav-list" aria-label="工作区切换">
-          {workspaceItems.map((item) => (
-            <button
-              aria-current={item.id === activeWorkspace ? "page" : undefined}
-              className={item.id === activeWorkspace ? "nav-item active" : "nav-item"}
-              key={item.id}
-              onClick={() => onWorkspaceChange(item.id)}
-              type="button"
-            >
-              <span className="nav-dot" />
-              {item.copy[language].label}
-            </button>
-          ))}
+          <div className="nav-section">
+            <span className="nav-section-label">{starterModeLabel[language]}</span>
+            <WorkspaceNavButton
+              activeWorkspace={activeWorkspace}
+              item={primaryWorkspace}
+              language={language}
+              onWorkspaceChange={onWorkspaceChange}
+            />
+          </div>
+          <details className="nav-section professional-nav" open={professionalActive || undefined}>
+            <summary>
+              <span>{workspaceModeLabel[language]}</span>
+              <small>{language === "zh" ? "高级能力" : "Advanced"}</small>
+            </summary>
+            <div className="nav-sublist">
+              {professionalWorkspaces.map((item) => (
+                <WorkspaceNavButton
+                  activeWorkspace={activeWorkspace}
+                  item={item}
+                  key={item.id}
+                  language={language}
+                  onWorkspaceChange={onWorkspaceChange}
+                />
+              ))}
+            </div>
+          </details>
         </nav>
         <div className="sidebar-footer">
-          <span>v4.0.0</span>
+          <span>v6.0.0</span>
           <strong>{language === "zh" ? "控制面在线" : "Control plane online"}</strong>
         </div>
       </aside>
@@ -299,5 +324,29 @@ export function Shell({
         <div className="workspace-body">{children}</div>
       </main>
     </div>
+  );
+}
+
+function WorkspaceNavButton({
+  activeWorkspace,
+  item,
+  language,
+  onWorkspaceChange
+}: {
+  activeWorkspace: WorkspaceId;
+  item: WorkspaceItem;
+  language: Locale;
+  onWorkspaceChange: (workspace: WorkspaceId) => void;
+}) {
+  return (
+    <button
+      aria-current={item.id === activeWorkspace ? "page" : undefined}
+      className={item.id === activeWorkspace ? "nav-item active" : "nav-item"}
+      onClick={() => onWorkspaceChange(item.id)}
+      type="button"
+    >
+      <span className="nav-dot" />
+      {item.copy[language].label}
+    </button>
   );
 }

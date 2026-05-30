@@ -1,7 +1,7 @@
 {
   "name": "ou-ui-panel",
   "private": true,
-  "version": "3.0.0",
+  "version": "6.0.0",
   "type": "module",
   "scripts": {
     "dev": "pnpm --filter @ou-ui/web dev",

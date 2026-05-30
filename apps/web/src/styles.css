@@ -216,7 +216,69 @@ select:focus {
 
 .nav-list {
   display: grid;
+  gap: 14px;
+}
+
+.nav-section {
+  display: grid;
   gap: 6px;
+}
+
+.nav-section-label,
+.professional-nav summary {
+  color: #94a3b8;
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.professional-nav {
+  min-width: 0;
+}
+
+.professional-nav summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 34px;
+  border-radius: 8px;
+  padding: 0 10px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.professional-nav summary::-webkit-details-marker {
+  display: none;
+}
+
+.professional-nav summary::after {
+  color: #38bdf8;
+  content: "+";
+  font-size: 16px;
+  line-height: 1;
+}
+
+.professional-nav[open] summary::after {
+  content: "-";
+}
+
+.professional-nav summary:hover {
+  background: rgb(255 255 255 / 8%);
+  color: #ffffff;
+}
+
+.professional-nav summary small {
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.nav-sublist {
+  display: grid;
+  gap: 6px;
+  padding-top: 6px;
 }
 
 .nav-item {
@@ -931,6 +993,217 @@ td span:not(.status):not(.task-state):not(.runtime-stage):not(.capability-chip):
 
 .overview-side-rail .panel {
   padding: 16px;
+}
+
+.launchpad {
+  display: grid;
+  gap: 20px;
+}
+
+.launchpad-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 18px;
+  border: 1px solid rgb(203 213 225 / 74%);
+  border-radius: 8px;
+  padding: 24px;
+  background:
+    linear-gradient(135deg, rgb(255 255 255 / 88%), rgb(240 249 255 / 82%)),
+    #ffffff;
+  box-shadow: 0 22px 58px rgb(15 23 42 / 10%);
+}
+
+.launchpad-hero h2 {
+  max-width: 780px;
+  margin: 0 0 10px;
+  font-size: 34px;
+  line-height: 1.08;
+}
+
+.launchpad-hero span {
+  display: block;
+  max-width: 820px;
+  color: #475569;
+  font-size: 15px;
+  font-weight: 800;
+  line-height: 1.6;
+}
+
+.starter-steps {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.starter-step {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 12px;
+  min-height: 126px;
+  border: 1px solid rgb(203 213 225 / 74%);
+  border-radius: 8px;
+  padding: 16px;
+  background: rgb(255 255 255 / 78%);
+  box-shadow: 0 14px 36px rgb(15 23 42 / 8%);
+}
+
+.starter-step-index {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 8px;
+  color: #ffffff;
+  background: #2563eb;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.starter-step h3 {
+  margin: 0 0 7px;
+  font-size: 16px;
+}
+
+.starter-step p {
+  margin: 0;
+  color: #64748b;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.55;
+}
+
+.starter-step-ok {
+  border-color: rgb(16 185 129 / 36%);
+}
+
+.starter-step-ok .starter-step-index,
+.status-metric-ok {
+  background: #047857;
+}
+
+.starter-step-warning .starter-step-index,
+.status-metric-warning {
+  background: #b45309;
+}
+
+.starter-step-muted .starter-step-index,
+.status-metric-muted {
+  background: #64748b;
+}
+
+.launchpad-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20px;
+  align-items: start;
+}
+
+.launchpad-panel {
+  display: grid;
+  align-content: start;
+  gap: 14px;
+  min-height: 284px;
+}
+
+.launchpad-panel label {
+  display: grid;
+  gap: 7px;
+  color: #475569;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.launchpad-panel input,
+.launchpad-panel select {
+  width: 100%;
+  min-height: 42px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  padding: 9px 11px;
+  color: #0f172a;
+  background: #ffffff;
+  font-weight: 800;
+  outline: none;
+}
+
+.launchpad-form-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 140px;
+  gap: 12px;
+}
+
+.command-preview {
+  display: grid;
+  gap: 8px;
+  border: 1px solid #dbe3ee;
+  border-radius: 8px;
+  padding: 12px;
+  background: #f8fafc;
+}
+
+.command-preview span {
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.command-preview code,
+.script-preview {
+  overflow: auto;
+  color: #0f172a;
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.script-preview {
+  max-height: 220px;
+  margin: 0;
+  border: 1px solid #dbe3ee;
+  border-radius: 8px;
+  padding: 12px;
+  background: #f8fafc;
+}
+
+.status-panel {
+  min-height: 284px;
+}
+
+.status-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.status-metric {
+  display: grid;
+  gap: 5px;
+  min-height: 78px;
+  border-radius: 8px;
+  padding: 12px;
+  color: #ffffff;
+}
+
+.status-metric span {
+  font-size: 12px;
+  font-weight: 900;
+  opacity: 0.78;
+}
+
+.status-metric strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 21px;
+}
+
+.launchpad-notice {
+  justify-content: center;
+  font-weight: 900;
 }
 
 .agent-card {
@@ -3110,6 +3383,8 @@ html[data-theme="dark"] .sidebar {
 html[data-theme="dark"] .kpi-card,
 html[data-theme="dark"] .panel,
 html[data-theme="dark"] .agent-card,
+html[data-theme="dark"] .launchpad-hero,
+html[data-theme="dark"] .starter-step,
 html[data-theme="dark"] .view-heading,
 html[data-theme="dark"] .user-chip,
 html[data-theme="dark"] .mode-switch,
@@ -3132,6 +3407,10 @@ html[data-theme="dark"] .agent-card:hover {
 
 html[data-theme="dark"] .topbar-title span,
 html[data-theme="dark"] .view-heading span,
+html[data-theme="dark"] .launchpad-hero span,
+html[data-theme="dark"] .starter-step p,
+html[data-theme="dark"] .launchpad-panel label,
+html[data-theme="dark"] .command-preview span,
 html[data-theme="dark"] .kpi-card span,
 html[data-theme="dark"] .agent-card span:not(.status):not(.task-state):not(.runtime-stage):not(.capability-chip):not(.failure-stage),
 html[data-theme="dark"] td span:not(.status):not(.task-state):not(.runtime-stage):not(.capability-chip):not(.failure-stage),
@@ -3142,6 +3421,10 @@ html[data-theme="dark"] .webhook-list span {
 
 html[data-theme="dark"] .login-form input,
 html[data-theme="dark"] .search input,
+html[data-theme="dark"] .launchpad-panel input,
+html[data-theme="dark"] .launchpad-panel select,
+html[data-theme="dark"] .command-preview,
+html[data-theme="dark"] .script-preview,
 html[data-theme="dark"] select,
 html[data-theme="dark"] textarea,
 html[data-theme="dark"] .mini-head,
@@ -3269,6 +3552,11 @@ html[data-theme="dark"] .notice-danger {
   background: rgb(69 10 10 / 72%);
 }
 
+html[data-theme="dark"] .command-preview code,
+html[data-theme="dark"] .script-preview {
+  color: #e5edf7;
+}
+
 @media (max-width: 1180px) {
   .workspace-grid.two {
     grid-template-columns: 1fr;
@@ -3298,6 +3586,11 @@ html[data-theme="dark"] .notice-danger {
   .node-focus-card {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+
+  .starter-steps,
+  .launchpad-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 820px) {
@@ -3314,6 +3607,21 @@ html[data-theme="dark"] .notice-danger {
   .view-heading {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .launchpad-hero {
+    grid-template-columns: 1fr;
+  }
+
+  .launchpad-hero h2 {
+    font-size: 28px;
+  }
+
+  .starter-steps,
+  .launchpad-grid,
+  .launchpad-form-row,
+  .status-grid {
+    grid-template-columns: 1fr;
   }
 
   .mini-table {

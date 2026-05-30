@@ -2249,7 +2249,7 @@ func (h Handler) apiDocs(c *gin.Context) {
 		"openapi": "3.1.0",
 		"info": gin.H{
 			"title":       "OU-UI REST API",
-			"version":     "v4.0.0",
+			"version":     "v6.0.0",
 			"description": "Authenticated control-plane API for OU-UI agents, generated proxy nodes, routing, HA, alerts, subscriptions, RBAC, API keys, and Copilot operations.",
 		},
 		"servers":  []gin.H{{"url": h.cfg.SecurePath + "/api/v1", "description": "Current panel secure-path API root"}},

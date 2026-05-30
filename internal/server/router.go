@@ -21,7 +21,7 @@ func NewRouter(cfg config.ServerConfig, db *gorm.DB) *gin.Engine {
 
 	r.GET("/healthz", h.health)
 	r.GET("/", func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"name": "OU-UI", "version": "v4.0.0", "securePath": cfg.SecurePath})
+		c.JSON(http.StatusOK, gin.H{"name": "OU-UI", "version": "v6.0.0", "securePath": cfg.SecurePath})
 	})
 
 	root := r.Group(cfg.SecurePath)
