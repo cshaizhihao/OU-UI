@@ -143,6 +143,9 @@ export type ClashProfile = {
   id: string;
   name: string;
   generatedYaml?: string;
+  proxyGroups?: Array<Record<string, unknown>>;
+  routingRules?: string[];
+  ruleProviders?: Array<Record<string, unknown>>;
   updatedAt?: string;
 };
 
@@ -394,6 +397,10 @@ export async function createClashProfile(input: {
 
 export function aggregateSubscriptionURL(format: AggregateSubscriptionFormat = "clash"): string {
   return `${apiBase()}/subscriptions/aggregate?format=${encodeURIComponent(format)}`;
+}
+
+export function clashProfileURL(id: string): string {
+  return `${apiBase()}/clash/profiles/${encodeURIComponent(id)}.yaml`;
 }
 
 export async function loadAggregateSubscription(format: AggregateSubscriptionFormat = "clash"): Promise<string> {

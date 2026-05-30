@@ -2054,6 +2054,102 @@ td span {
   resize: vertical;
 }
 
+.subscription-command-panel {
+  gap: 14px;
+}
+
+.subscription-command-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(190px, 1fr));
+  gap: 10px;
+}
+
+.subscription-card {
+  display: grid;
+  gap: 10px;
+  min-height: 172px;
+  border: 1px solid #dbe3ee;
+  border-radius: 8px;
+  padding: 12px;
+  background: linear-gradient(180deg, rgb(248 250 252 / 92%), rgb(255 255 255 / 96%));
+}
+
+.subscription-card.selected {
+  border-color: rgb(14 165 233 / 46%);
+  box-shadow: inset 0 0 0 1px rgb(14 165 233 / 20%), 0 14px 28px rgb(14 165 233 / 10%);
+}
+
+.subscription-card strong,
+.subscription-card span,
+.subscription-card code,
+.profile-card-head strong,
+.profile-card-head span,
+.profile-card-stats span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.subscription-card span,
+.subscription-card-meta span,
+.subscription-health-strip span,
+.profile-card-head span,
+.profile-card-stats span {
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.subscription-card strong {
+  display: -webkit-box;
+  min-height: 34px;
+  margin-top: 3px;
+  color: #0f172a;
+  font-size: 13px;
+  line-height: 1.32;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.subscription-card code {
+  color: #0f766e;
+  font-size: 11px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.subscription-card-meta,
+.profile-card-stats,
+.subscription-health-strip {
+  display: grid;
+  gap: 8px;
+}
+
+.subscription-card-meta {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.subscription-health-strip {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 10px;
+  background: #f8fafc;
+}
+
+.subscription-health-strip div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.subscription-health-strip strong {
+  overflow: hidden;
+  color: #0f172a;
+  font-size: 16px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .control-form {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -2180,6 +2276,47 @@ td span {
   font-weight: 900;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.clash-profile-list article {
+  gap: 10px;
+}
+
+.profile-card-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+}
+
+.profile-card-head > div {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+}
+
+.profile-card-stats {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  padding-top: 2px;
+}
+
+.profile-card-stats span {
+  border-radius: 8px;
+  padding: 7px 8px;
+  background: #f8fafc;
+  white-space: nowrap;
+}
+
+.yaml-preview {
+  overflow: auto;
+  max-height: 178px;
+  margin: 0;
+  border: 1px solid #dbe3ee;
+  border-radius: 8px;
+  padding: 10px;
+  color: #0f172a;
+  background: #f8fafc;
+  font: 11px/1.55 ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
 }
 
 .incident-list p {
@@ -2593,6 +2730,40 @@ html[data-theme="dark"] .node-inspector-sections > div {
   background: rgb(15 23 42 / 78%);
 }
 
+html[data-theme="dark"] .subscription-card,
+html[data-theme="dark"] .subscription-health-strip,
+html[data-theme="dark"] .aggregate-box,
+html[data-theme="dark"] .profile-card-stats span,
+html[data-theme="dark"] .yaml-preview {
+  border-color: rgb(148 163 184 / 18%);
+  color: #e5edf7;
+  background: rgb(15 23 42 / 72%);
+}
+
+html[data-theme="dark"] .subscription-card {
+  background: linear-gradient(180deg, rgb(15 23 42 / 78%), rgb(30 41 59 / 62%));
+}
+
+html[data-theme="dark"] .subscription-card.selected {
+  border-color: rgb(56 189 248 / 48%);
+  box-shadow: inset 0 0 0 1px rgb(56 189 248 / 24%), 0 14px 34px rgb(14 165 233 / 12%);
+}
+
+html[data-theme="dark"] .subscription-card strong,
+html[data-theme="dark"] .subscription-health-strip strong,
+html[data-theme="dark"] .profile-card-head strong,
+html[data-theme="dark"] .yaml-preview {
+  color: #e5edf7;
+}
+
+html[data-theme="dark"] .subscription-card span,
+html[data-theme="dark"] .subscription-card-meta span,
+html[data-theme="dark"] .subscription-health-strip span,
+html[data-theme="dark"] .profile-card-head span,
+html[data-theme="dark"] .profile-card-stats span {
+  color: #94a3b8;
+}
+
 html[data-theme="dark"] .node-selector-list button.selected,
 html[data-theme="dark"] .node-selector-list button:hover,
 html[data-theme="dark"] .node-inspector-list button.selected,
@@ -2631,6 +2802,10 @@ html[data-theme="dark"] .notice-danger {
     grid-template-columns: 1fr;
   }
 
+  .subscription-command-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .node-audit-layout {
     grid-template-columns: 1fr;
   }
@@ -2667,6 +2842,20 @@ html[data-theme="dark"] .notice-danger {
 
   .mini-row {
     min-width: max(620px, 100%);
+  }
+
+  .subscription-command-grid,
+  .subscription-health-strip {
+    grid-template-columns: 1fr;
+  }
+
+  .subscription-card-meta,
+  .profile-card-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .profile-card-head {
+    grid-template-columns: 1fr;
   }
 
   .mode-switch {

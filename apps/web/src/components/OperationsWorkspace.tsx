@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from "react";
+import { useMemo, useState, type FormEvent } from "react";
 import {
   aggregateSubscriptionURL,
   createSubscription,
@@ -17,6 +17,7 @@ import {
   parseCSV,
   SectionHeader,
   useFormatTime,
+  useLocale,
   ViewHeading
 } from "./ConsolePrimitives";
 
@@ -45,6 +46,9 @@ export function OperationsWorkspace({ data, disabled = false, onRefresh }: Opera
   });
   const [aggregateFormat, setAggregateFormat] = useState<AggregateSubscriptionFormat>("clash");
   const [aggregateContent, setAggregateContent] = useState("");
+  const language = useLocale();
+  const formatTime = useFormatTime();
+  const subscriptionSummary = useMemo(() => buildSubscriptionSummary(control), [control]);
   const controlsDisabled = disabled || !control;
 
   async function runAction(label: string, action: () => Promise<unknown>) {
@@ -102,6 +106,15 @@ export function OperationsWorkspace({ data, disabled = false, onRefresh }: Opera
     });
   }
 
+  async function handleCopyAggregateURL(format: AggregateSubscriptionFormat) {
+    try {
+      await navigator.clipboard.writeText(aggregateSubscriptionURL(format));
+      setMessage("订阅地址已复制");
+    } catch {
+      setMessage(aggregateSubscriptionURL(format));
+    }
+  }
+
   return (
     <div className="workspace-view">
       <ViewHeading
@@ -115,6 +128,52 @@ export function OperationsWorkspace({ data, disabled = false, onRefresh }: Opera
         title="告警与订阅聚合"
       />
       {message ? <NoticeRow>{message}</NoticeRow> : null}
+
+      <section className="panel subscription-command-panel">
+        <SectionHeader eyebrow="订阅控制台" title="聚合订阅预览" />
+        <div className="subscription-command-grid">
+          {subscriptionFormats.map((format) => (
+            <article className={aggregateFormat === format.value ? "subscription-card selected" : "subscription-card"} key={format.value}>
+              <div>
+                <span>{format.label}</span>
+                <strong>{format.description}</strong>
+              </div>
+              <code>{aggregateSubscriptionURL(format.value)}</code>
+              <div className="subscription-card-meta">
+                <span>{formatAvailableNodes(subscriptionSummary.enabledNodes, language)}</span>
+                <span>{formatSourceCount(subscriptionSummary.activeSources, language)}</span>
+                <span>{formatTime(subscriptionSummary.lastFetchedAt)}</span>
+              </div>
+              <div className="button-row">
+                <button className="ghost-button" onClick={() => setAggregateFormat(format.value)} type="button">
+                  设为输出格式
+                </button>
+                <button className="ghost-button" onClick={() => void handleCopyAggregateURL(format.value)} type="button">
+                  复制地址
+                </button>
+              </div>
+            </article>
+          ))}
+        </div>
+        <div className="subscription-health-strip">
+          <div>
+            <span>订阅源</span>
+            <strong>{subscriptionSummary.activeSources} / {subscriptionSummary.totalSources}</strong>
+          </div>
+          <div>
+            <span>外部节点</span>
+            <strong>{subscriptionSummary.enabledNodes} / {subscriptionSummary.totalNodes}</strong>
+          </div>
+          <div>
+            <span>最近导入</span>
+            <strong>{formatTime(subscriptionSummary.lastFetchedAt)}</strong>
+          </div>
+          <div>
+            <span>异常源</span>
+            <strong>{subscriptionSummary.errorSources}</strong>
+          </div>
+        </div>
+      </section>
 
       <div className="workspace-grid two">
         <section className="panel">
@@ -179,11 +238,12 @@ export function OperationsWorkspace({ data, disabled = false, onRefresh }: Opera
             </button>
           </form>
           <MiniTable
-            columns={["节点", "协议", "地址"]}
-            rows={(control?.externalNodes ?? []).slice(0, 6).map((node) => [
-              node.name,
-              node.protocol,
-              `${node.address}:${node.port}`
+            columns={["订阅源", "格式", "状态", "最近导入"]}
+            rows={(control?.subscriptions ?? []).slice(0, 6).map((item) => [
+              item.name,
+              item.format || "auto",
+              item.lastError || (item.enabled ? "启用" : "暂停"),
+              formatTime(item.lastFetchedAt)
             ])}
           />
         </section>
@@ -212,9 +272,61 @@ export function OperationsWorkspace({ data, disabled = false, onRefresh }: Opera
         </div>
       </section>
 
+      <section className="panel">
+        <SectionHeader eyebrow="订阅节点" title="外部节点池" />
+        <MiniTable
+          columns={["节点", "协议", "地址", "质量"]}
+          rows={(control?.externalNodes ?? []).slice(0, 8).map((node) => [
+            node.name,
+            node.protocol,
+            `${node.address}:${node.port}`,
+            `${node.latencyMs ?? "--"} ms / ${node.lossPercent ?? 0}%`
+          ])}
+        />
+      </section>
+
       <AlertList alerts={control?.alerts ?? []} />
     </div>
   );
+}
+
+type SubscriptionFormatPreview = {
+  description: string;
+  label: string;
+  value: AggregateSubscriptionFormat;
+};
+
+const subscriptionFormats: SubscriptionFormatPreview[] = [
+  { value: "clash", label: "Clash YAML", description: "Rule Provider 与 Proxy Group 直接可用" },
+  { value: "v2ray", label: "V2Ray Base64", description: "兼容通用订阅客户端" },
+  { value: "raw", label: "Raw Shares", description: "调试和迁移时快速检查节点" },
+  { value: "sing-box", label: "Sing-box JSON", description: "预留 sing-box 客户端托管输出" }
+];
+
+function buildSubscriptionSummary(control: DashboardDTO["control"] | undefined) {
+  const subscriptions = control?.subscriptions ?? [];
+  const nodes = control?.externalNodes ?? [];
+  const lastFetched = subscriptions
+    .map((item) => item.lastFetchedAt)
+    .filter((value): value is string => Boolean(value))
+    .sort((a, b) => new Date(b).getTime() - new Date(a).getTime())[0];
+
+  return {
+    activeSources: subscriptions.filter((item) => item.enabled).length,
+    enabledNodes: nodes.filter((item) => item.enabled).length,
+    errorSources: subscriptions.filter((item) => item.lastError).length,
+    lastFetchedAt: lastFetched,
+    totalNodes: nodes.length,
+    totalSources: subscriptions.length
+  };
+}
+
+function formatAvailableNodes(count: number, language: "zh" | "en"): string {
+  return language === "zh" ? `${count} 个可用节点` : `${count} available nodes`;
+}
+
+function formatSourceCount(count: number, language: "zh" | "en"): string {
+  return language === "zh" ? `${count} 个订阅源` : `${count} sources`;
 }
 
 function AlertList({ alerts }: { alerts: AlertEvent[] }) {

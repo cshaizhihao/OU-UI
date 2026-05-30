@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from "react";
-import { createClashProfile, type ClashProfile, type DashboardDTO } from "../api";
+import { clashProfileURL, createClashProfile, type ClashProfile, type DashboardDTO } from "../api";
 import {
   MiniTable,
   NoticeRow,
@@ -8,6 +8,7 @@ import {
   SectionHeader,
   stringsTrim,
   useFormatTime,
+  useLocale,
   ViewHeading
 } from "./ConsolePrimitives";
 
@@ -82,6 +83,15 @@ export function ClashWorkspace({ data, disabled = false, onRefresh }: ClashWorks
     );
   }
 
+  async function handleCopyProfile(path: string) {
+    try {
+      await navigator.clipboard.writeText(path);
+      setMessage("托管地址已复制");
+    } catch {
+      setMessage(path);
+    }
+  }
+
   return (
     <div className="workspace-view">
       <ViewHeading
@@ -148,7 +158,7 @@ export function ClashWorkspace({ data, disabled = false, onRefresh }: ClashWorks
 
         <section className="panel">
           <SectionHeader eyebrow="托管文件" title="已生成配置" />
-          <ProfileList profiles={data?.control.clashProfiles ?? []} />
+          <ProfileList onCopy={(path) => void handleCopyProfile(path)} profiles={data?.control.clashProfiles ?? []} />
         </section>
       </div>
 
@@ -167,18 +177,47 @@ export function ClashWorkspace({ data, disabled = false, onRefresh }: ClashWorks
   );
 }
 
-function ProfileList({ profiles }: { profiles: ClashProfile[] }) {
+function ProfileList({ onCopy, profiles }: { onCopy: (path: string) => void; profiles: ClashProfile[] }) {
   const formatTime = useFormatTime();
+  const language = useLocale();
   return (
-    <div className="profile-list">
+    <div className="profile-list clash-profile-list">
       {profiles.slice(0, 8).map((profile) => (
         <article key={profile.id}>
-          <strong>{profile.name}</strong>
-          <code>{`/api/v1/clash/profiles/${profile.id}.yaml`}</code>
-          <span>{formatTime(profile.updatedAt)}</span>
+          <div className="profile-card-head">
+            <div>
+              <strong>{profile.name}</strong>
+              <span>{formatTime(profile.updatedAt)}</span>
+            </div>
+            <button className="ghost-button" onClick={() => onCopy(profilePath(profile.id))} type="button">
+              复制地址
+            </button>
+          </div>
+          <code>{clashProfileURL(profile.id)}</code>
+          <div className="profile-card-stats">
+            <span>Provider {profile.ruleProviders?.length ?? 0}</span>
+            <span>Proxy Group {profile.proxyGroups?.length ?? 0}</span>
+            <span>{language === "zh" ? `规则 ${profile.routingRules?.length ?? 0}` : `Rules ${profile.routingRules?.length ?? 0}`}</span>
+            <span>{formatYamlLineCount(profile.generatedYaml, language)}</span>
+          </div>
+          {profile.generatedYaml ? (
+            <pre className="yaml-preview">{profile.generatedYaml.split("\n").slice(0, 8).join("\n")}</pre>
+          ) : null}
         </article>
       ))}
       {profiles.length === 0 ? <p className="empty-state">暂无 Clash 配置</p> : null}
     </div>
   );
+}
+
+function profilePath(id: string): string {
+  return clashProfileURL(id);
+}
+
+function formatYamlLineCount(value: string | undefined, language: "zh" | "en"): string {
+  if (!value) {
+    return language === "zh" ? "YAML 未生成" : "YAML not generated";
+  }
+  const lineCount = value.split("\n").length;
+  return language === "zh" ? `YAML ${lineCount} 行` : `YAML ${lineCount} lines`;
 }
