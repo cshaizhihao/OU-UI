@@ -127,6 +127,45 @@ func TestGenerateClashYAMLIsParseable(t *testing.T) {
 	}
 }
 
+func TestGenerateClashYAMLNormalizesGroupsProvidersAndSelectedNodes(t *testing.T) {
+	db := openTestDB(t)
+	h := Handler{db: db}
+	nodes := []models.ExternalNode{
+		{ID: "ext_keep", Name: "Keep SS", Protocol: "shadowsocks", Address: "keep.example.com", Port: 8388, Config: datatypes.JSON(`{"cipher":"aes-128-gcm","password":"pass"}`), Enabled: true},
+		{ID: "ext_skip", Name: "Skip SS", Protocol: "shadowsocks", Address: "skip.example.com", Port: 8388, Config: datatypes.JSON(`{"cipher":"aes-128-gcm","password":"pass"}`), Enabled: true},
+	}
+	if err := db.Create(&nodes).Error; err != nil {
+		t.Fatalf("seed external nodes: %v", err)
+	}
+	content := h.generateClashYAML(clashProfileRequest{
+		Name:          "Selected",
+		SelectedNodes: []string{"ext_keep"},
+		RuleProviders: []map[string]any{
+			{"name": "private", "type": "http", "behavior": "domain", "url": "https://example.com/private.yaml", "interval": 86400},
+		},
+		ProxyGroups: []map[string]any{
+			{"name": "Manual", "type": "select", "proxies": []string{"*"}},
+		},
+	})
+	var out map[string]any
+	if err := yaml.Unmarshal([]byte(content), &out); err != nil {
+		t.Fatalf("generated YAML is invalid: %v\n%s", err, content)
+	}
+	proxies, ok := out["proxies"].([]any)
+	if !ok || len(proxies) != 1 {
+		t.Fatalf("expected one selected proxy, got %#v", out["proxies"])
+	}
+	if strings.Contains(content, "_nodeId") || strings.Contains(content, "Skip SS") {
+		t.Fatalf("internal fields or unselected nodes leaked into yaml:\n%s", content)
+	}
+	if !strings.Contains(content, "RULE-SET,private,Manual") {
+		t.Fatalf("expected provider rule to target custom group:\n%s", content)
+	}
+	if !strings.Contains(content, "proxy-groups:") || !strings.Contains(content, "Keep SS") {
+		t.Fatalf("expected normalized proxy group with selected node:\n%s", content)
+	}
+}
+
 func TestAggregateSubscriptionEndpointServesMultipleFormats(t *testing.T) {
 	db := openTestDB(t)
 	cfg := config.ServerConfig{

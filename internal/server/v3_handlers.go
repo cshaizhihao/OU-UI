@@ -1393,6 +1393,7 @@ type clashProfileRequest struct {
 	RuleProviders []map[string]any `json:"ruleProviders"`
 	ProxyGroups   []map[string]any `json:"proxyGroups"`
 	RoutingRules  []string         `json:"routingRules"`
+	SelectedNodes []string         `json:"selectedNodes"`
 }
 
 func (h Handler) listClashProfiles(c *gin.Context) {
@@ -1439,6 +1440,7 @@ func (h Handler) getClashProfileYAML(c *gin.Context) {
 
 func (h Handler) generateClashYAML(req clashProfileRequest) string {
 	proxies := h.clashProxies()
+	proxies = filterClashProxies(proxies, req.SelectedNodes)
 	proxyNames := make([]string, 0, len(proxies))
 	for _, proxy := range proxies {
 		if name, ok := proxy["name"].(string); ok && name != "" {
@@ -1448,21 +1450,21 @@ func (h Handler) generateClashYAML(req clashProfileRequest) string {
 	if len(proxyNames) == 0 {
 		proxyNames = []string{"DIRECT"}
 	}
-	groups := cloneMapSlice(req.ProxyGroups)
-	if len(groups) == 0 {
-		groups = []map[string]any{
-			{"name": "OU-Auto", "type": "url-test", "url": "https://www.gstatic.com/generate_204", "interval": 300, "proxies": proxyNames},
-			{"name": "OU-Fallback", "type": "fallback", "url": "https://www.gstatic.com/generate_204", "interval": 300, "proxies": proxyNames},
-		}
-	}
+	groups := normalizeClashProxyGroups(req.ProxyGroups, proxyNames)
+	defaultTarget := firstClashGroupName(groups, "OU-Auto")
 	rules := req.RoutingRules
 	if len(rules) == 0 {
+		for _, provider := range req.RuleProviders {
+			if name := strings.TrimSpace(fmt.Sprint(provider["name"])); name != "" {
+				rules = append(rules, "RULE-SET,"+name+","+defaultTarget)
+			}
+		}
 		var dbRules []models.RoutingRule
 		_ = h.db.Where("enabled = ?", true).Order("priority asc").Find(&dbRules).Error
 		for _, rule := range dbRules {
-			rules = append(rules, clashRuleLine(rule))
+			rules = append(rules, clashRuleLineWithTarget(rule, defaultTarget))
 		}
-		rules = append(rules, "MATCH,OU-Auto")
+		rules = append(rules, "MATCH,"+defaultTarget)
 	}
 	document := map[string]any{
 		"mixed-port":          7890,
@@ -1470,7 +1472,7 @@ func (h Handler) generateClashYAML(req clashProfileRequest) string {
 		"mode":                "rule",
 		"log-level":           "warning",
 		"external-controller": "127.0.0.1:9090",
-		"proxies":             proxies,
+		"proxies":             sanitizeClashProxies(proxies),
 		"proxy-groups":        groups,
 		"rules":               rules,
 	}
@@ -1506,6 +1508,8 @@ func (h Handler) clashProxies() []map[string]any {
 		proxy["type"] = clashType(node.Protocol)
 		proxy["server"] = node.Address
 		proxy["port"] = node.Port
+		proxy["_nodeId"] = node.ID
+		proxy["_source"] = "external"
 		proxies = append(proxies, proxy)
 	}
 	var nodes []models.Node
@@ -1528,10 +1532,12 @@ func (h Handler) clashProxies() []map[string]any {
 		}
 		protocol := strings.ToLower(fmt.Sprint(spec["protocol"]))
 		proxy := map[string]any{
-			"name":   node.Name,
-			"type":   clashType(protocol),
-			"server": server,
-			"port":   intFromAny(spec["port"]),
+			"name":    node.Name,
+			"type":    clashType(protocol),
+			"server":  server,
+			"port":    intFromAny(spec["port"]),
+			"_nodeId": node.ID,
+			"_source": "managed",
 		}
 		if uuid := firstMapString(settings, "uuid", "id"); uuid != "" {
 			proxy["uuid"] = uuid
@@ -1545,6 +1551,85 @@ func (h Handler) clashProxies() []map[string]any {
 		proxies = append(proxies, proxy)
 	}
 	return proxies
+}
+
+func filterClashProxies(proxies []map[string]any, selected []string) []map[string]any {
+	selected = compactStringList(selected)
+	if len(selected) == 0 || containsWildcard(selected) {
+		return proxies
+	}
+	allowed := map[string]struct{}{}
+	for _, value := range selected {
+		allowed[strings.ToLower(strings.TrimSpace(value))] = struct{}{}
+	}
+	filtered := make([]map[string]any, 0, len(proxies))
+	for _, proxy := range proxies {
+		keys := []string{
+			strings.ToLower(proxyString(proxy, "name")),
+			strings.ToLower(proxyString(proxy, "_nodeId", "id")),
+		}
+		for _, key := range keys {
+			if _, ok := allowed[key]; ok && key != "" {
+				filtered = append(filtered, proxy)
+				break
+			}
+		}
+	}
+	return filtered
+}
+
+func sanitizeClashProxies(proxies []map[string]any) []map[string]any {
+	out := make([]map[string]any, 0, len(proxies))
+	for _, proxy := range proxies {
+		next := cloneMap(proxy)
+		for key := range next {
+			if strings.HasPrefix(key, "_") {
+				delete(next, key)
+			}
+		}
+		out = append(out, next)
+	}
+	return out
+}
+
+func normalizeClashProxyGroups(groups []map[string]any, proxyNames []string) []map[string]any {
+	normalized := cloneMapSlice(groups)
+	if len(normalized) == 0 {
+		return []map[string]any{
+			{"name": "OU-Auto", "type": "url-test", "url": "https://www.gstatic.com/generate_204", "interval": 300, "proxies": proxyNames},
+			{"name": "OU-Fallback", "type": "fallback", "url": "https://www.gstatic.com/generate_204", "interval": 300, "proxies": proxyNames},
+		}
+	}
+	for index, group := range normalized {
+		if strings.TrimSpace(fmt.Sprint(group["name"])) == "" {
+			group["name"] = "OU-Group-" + strconv.Itoa(index+1)
+		}
+		groupType := strings.ToLower(strings.TrimSpace(fmt.Sprint(group["type"])))
+		if groupType == "" {
+			groupType = "select"
+			group["type"] = groupType
+		}
+		groupProxies := stringSliceFromAny(group["proxies"])
+		if len(groupProxies) == 0 || containsWildcard(groupProxies) {
+			group["proxies"] = proxyNames
+		}
+		if (groupType == "url-test" || groupType == "fallback" || groupType == "load-balance") && strings.TrimSpace(fmt.Sprint(group["url"])) == "" {
+			group["url"] = "https://www.gstatic.com/generate_204"
+		}
+		if (groupType == "url-test" || groupType == "fallback" || groupType == "load-balance") && intFromAny(group["interval"]) == 0 {
+			group["interval"] = 300
+		}
+	}
+	return normalized
+}
+
+func firstClashGroupName(groups []map[string]any, fallback string) string {
+	for _, group := range groups {
+		if name := strings.TrimSpace(fmt.Sprint(group["name"])); name != "" {
+			return name
+		}
+	}
+	return fallback
 }
 
 func (h Handler) generateV2RaySubscription() string {
@@ -2474,7 +2559,11 @@ func outboundTagForAction(rule models.RoutingRule) string {
 }
 
 func clashRuleLine(rule models.RoutingRule) string {
-	target := "OU-Auto"
+	return clashRuleLineWithTarget(rule, "OU-Auto")
+}
+
+func clashRuleLineWithTarget(rule models.RoutingRule, defaultTarget string) string {
+	target := defaultNonEmpty(defaultTarget, "OU-Auto")
 	if rule.Action == "block" {
 		target = "REJECT"
 	} else if rule.Action == "direct" {
@@ -2832,6 +2921,23 @@ func proxyString(values map[string]any, keys ...string) string {
 
 func proxyPort(values map[string]any) int {
 	return intFromAny(firstProxyValue(values, "port", "server_port", "serverPort"))
+}
+
+func stringSliceFromAny(value any) []string {
+	switch typed := value.(type) {
+	case []string:
+		return compactStringList(typed)
+	case []any:
+		out := make([]string, 0, len(typed))
+		for _, item := range typed {
+			out = append(out, strings.TrimSpace(fmt.Sprint(item)))
+		}
+		return compactStringList(out)
+	case string:
+		return compactStringList(strings.Split(typed, ","))
+	default:
+		return nil
+	}
 }
 
 func boolValue(value any) bool {

@@ -382,6 +382,7 @@ export async function createClashProfile(input: {
   ruleProviders: Array<Record<string, unknown>>;
   proxyGroups: Array<Record<string, unknown>>;
   routingRules: string[];
+  selectedNodes?: string[];
 }) {
   return request<ClashProfile>("/clash/profiles", {
     method: "POST",

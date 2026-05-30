@@ -454,7 +454,14 @@ function V3ControlCenter({
   const [aggregateContent, setAggregateContent] = useState("");
   const [clash, setClash] = useState({
     name: "OU-UI Managed Clash",
-    providerUrl: "https://example.com/rules/private.yaml"
+    providerName: "private",
+    providerUrl: "https://example.com/rules/private.yaml",
+    providerBehavior: "domain",
+    groupName: "OU-Auto",
+    groupType: "url-test",
+    groupNodes: "*",
+    selectedNodes: "*",
+    routingRules: ""
   });
   const [tenant, setTenant] = useState({
     name: "Ops tenant",
@@ -598,22 +605,35 @@ function V3ControlCenter({
 
   function handleCreateClash(event: FormEvent) {
     event.preventDefault();
+    const providerUrl = stringsTrim(clash.providerUrl);
+    const groupName = stringsTrim(clash.groupName);
     void runAction("Clash profile", () =>
       createClashProfile({
         name: clash.name,
-        ruleProviders: clash.providerUrl
+        ruleProviders: providerUrl
           ? [
               {
-                name: "private",
+                name: stringsTrim(clash.providerName) || "private",
                 type: "http",
-                behavior: "domain",
-                url: clash.providerUrl,
+                behavior: clash.providerBehavior,
+                url: providerUrl,
                 interval: 86400
               }
             ]
           : [],
-        proxyGroups: [],
-        routingRules: []
+        proxyGroups: groupName
+          ? [
+              {
+                name: groupName,
+                type: clash.groupType,
+                proxies: parseCSV(clash.groupNodes),
+                url: "https://www.gstatic.com/generate_204",
+                interval: 300
+              }
+            ]
+          : [],
+        routingRules: parseLines(clash.routingRules),
+        selectedNodes: parseCSV(clash.selectedNodes)
       })
     );
   }
@@ -900,8 +920,45 @@ function V3ControlCenter({
               <input value={clash.name} onChange={(event) => setClash({ ...clash, name: event.target.value })} />
             </label>
             <label>
+              Provider name
+              <input value={clash.providerName} onChange={(event) => setClash({ ...clash, providerName: event.target.value })} />
+            </label>
+            <label>
               Provider URL
               <input value={clash.providerUrl} onChange={(event) => setClash({ ...clash, providerUrl: event.target.value })} />
+            </label>
+            <label>
+              Provider behavior
+              <select value={clash.providerBehavior} onChange={(event) => setClash({ ...clash, providerBehavior: event.target.value })}>
+                <option value="domain">Domain</option>
+                <option value="ipcidr">IP CIDR</option>
+                <option value="classical">Classical</option>
+              </select>
+            </label>
+            <label>
+              Group
+              <input value={clash.groupName} onChange={(event) => setClash({ ...clash, groupName: event.target.value })} />
+            </label>
+            <label>
+              Group type
+              <select value={clash.groupType} onChange={(event) => setClash({ ...clash, groupType: event.target.value })}>
+                <option value="url-test">URL test</option>
+                <option value="fallback">Fallback</option>
+                <option value="select">Select</option>
+                <option value="load-balance">Load balance</option>
+              </select>
+            </label>
+            <label>
+              Group nodes
+              <input value={clash.groupNodes} onChange={(event) => setClash({ ...clash, groupNodes: event.target.value })} />
+            </label>
+            <label>
+              Profile nodes
+              <input value={clash.selectedNodes} onChange={(event) => setClash({ ...clash, selectedNodes: event.target.value })} />
+            </label>
+            <label className="full-span">
+              Rules
+              <textarea value={clash.routingRules} onChange={(event) => setClash({ ...clash, routingRules: event.target.value })} />
             </label>
             <button className="primary-button" disabled={Boolean(busy) || controlsDisabled} type="submit">
               Generate YAML
@@ -1201,6 +1258,17 @@ function parseCSV(value: string): string[] {
     .split(",")
     .map((item) => item.trim())
     .filter(Boolean);
+}
+
+function parseLines(value: string): string[] {
+  return value
+    .split(/\r?\n/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function stringsTrim(value: string): string {
+  return value.trim();
 }
 
 function gbToBytes(value: number): number {
