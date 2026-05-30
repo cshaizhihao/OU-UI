@@ -258,7 +258,7 @@ func (h Handler) markOfflineAgents() {
 
 func (h Handler) evaluateTenantQuotas() {
 	var tenants []models.Tenant
-	if err := h.db.Where("status = ? AND (monthly_traffic_quota > 0 OR max_connections > 0)", "active").Find(&tenants).Error; err != nil {
+	if err := h.db.Where("status = ? AND (monthly_traffic_quota > 0 OR per_node_traffic_quota > 0 OR max_connections > 0)", "active").Find(&tenants).Error; err != nil {
 		return
 	}
 	for _, tenant := range tenants {

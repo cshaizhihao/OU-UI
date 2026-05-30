@@ -713,6 +713,39 @@ func TestPanelUserRBACFiltersOverviewAndEnforcesNodeQuota(t *testing.T) {
 	}
 }
 
+func TestTenantPerNodeQuotaSweepIncludesPerNodeOnlyTenants(t *testing.T) {
+	db := openTestDB(t)
+	h := Handler{db: db}
+	now := time.Now().UTC()
+	if err := db.Create(&models.Tenant{
+		ID:                  "ten_per_node_only",
+		Name:                "Per Node Only",
+		Status:              "active",
+		Role:                "operator",
+		NodeAccess:          datatypes.JSON(`["agt_allowed"]`),
+		PerNodeTrafficQuota: 100,
+	}).Error; err != nil {
+		t.Fatalf("seed tenant: %v", err)
+	}
+	if err := db.Create(&models.NodeTrafficSample{
+		NodeID:      "nod_allowed",
+		AgentID:     "agt_allowed",
+		RxBytes:     80,
+		TxBytes:     40,
+		Connections: 1,
+		CollectedAt: now,
+	}).Error; err != nil {
+		t.Fatalf("seed traffic: %v", err)
+	}
+
+	h.evaluateTenantQuotas()
+
+	var alert models.AlertEvent
+	if err := db.Where("source_type = ? AND source_id = ? AND event_type = ?", "tenant", "ten_per_node_only", "tenant.node.quota.exceeded").First(&alert).Error; err != nil {
+		t.Fatalf("expected per-node quota alert for per-node-only tenant: %v", err)
+	}
+}
+
 func TestPanelUserCannotCreateTenantsUsersOrAPIKeys(t *testing.T) {
 	db := openTestDB(t)
 	cfg := config.ServerConfig{

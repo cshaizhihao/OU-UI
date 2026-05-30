@@ -2319,6 +2319,236 @@ td span {
   font: 11px/1.55 ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
 }
 
+.tenant-ops-grid {
+  display: grid;
+  grid-template-columns: minmax(360px, 1.2fr) minmax(300px, 0.8fr);
+  gap: 16px;
+}
+
+.tenant-ledger-panel,
+.tenant-detail-panel {
+  align-content: start;
+}
+
+.tenant-ledger,
+.tenant-user-card-grid {
+  display: grid;
+  gap: 10px;
+}
+
+.tenant-card,
+.tenant-user-card {
+  display: grid;
+  min-width: 0;
+  gap: 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 12px;
+  text-align: left;
+  background: #ffffff;
+}
+
+.tenant-card {
+  width: 100%;
+  cursor: pointer;
+}
+
+.tenant-card.selected {
+  border-color: rgb(15 118 110 / 42%);
+  background: linear-gradient(180deg, rgb(240 253 250 / 92%), #ffffff);
+  box-shadow: inset 0 0 0 1px rgb(15 118 110 / 12%), 0 12px 30px rgb(15 118 110 / 10%);
+}
+
+.tenant-card-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: start;
+}
+
+.tenant-card-head > div,
+.tenant-meter,
+.tenant-detail-body,
+.tenant-policy-line,
+.tenant-metric-box {
+  display: grid;
+  min-width: 0;
+}
+
+.tenant-card-head strong,
+.tenant-card-head span,
+.tenant-metric-box strong,
+.tenant-metric-box span,
+.tenant-card-stats span,
+.tenant-user-strip span,
+.tenant-scope-chips span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tenant-card-head strong {
+  color: #0f172a;
+  font-size: 14px;
+  white-space: nowrap;
+}
+
+.tenant-card-head span,
+.tenant-meter span,
+.tenant-card-stats span,
+.tenant-metric-box span,
+.tenant-policy-line > span,
+.tenant-user-strip span {
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.tenant-scope-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.tenant-scope-chips span {
+  max-width: 150px;
+  border: 1px solid #dbe3ee;
+  border-radius: 999px;
+  padding: 4px 8px;
+  color: #0f766e;
+  background: #f8fafc;
+  font-size: 11px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.tenant-meter-stack {
+  display: grid;
+  gap: 9px;
+}
+
+.tenant-meter {
+  gap: 6px;
+}
+
+.tenant-meter > div:first-child {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.tenant-meter strong {
+  overflow: hidden;
+  color: #0f172a;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tenant-meter-track {
+  height: 7px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #e2e8f0;
+}
+
+.tenant-meter-track span {
+  display: block;
+  height: 100%;
+  min-width: 3px;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #0f766e, #0891b2);
+}
+
+.tenant-card-stats {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.tenant-risk {
+  border-radius: 999px;
+  padding: 4px 8px;
+  font-size: 11px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.tenant-risk-ok {
+  color: #047857;
+  background: #d1fae5;
+}
+
+.tenant-risk-warning {
+  color: #92400e;
+  background: #fef3c7;
+}
+
+.tenant-risk-danger {
+  color: #be123c;
+  background: #ffe4e6;
+}
+
+.tenant-risk-muted {
+  color: #64748b;
+  background: #f1f5f9;
+}
+
+.tenant-detail-body {
+  gap: 14px;
+}
+
+.tenant-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.tenant-detail-grid.compact {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.tenant-metric-box {
+  gap: 4px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 10px;
+  background: #f8fafc;
+}
+
+.tenant-metric-box strong {
+  color: #0f172a;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.tenant-policy-line {
+  gap: 8px;
+}
+
+.tenant-user-strip {
+  display: grid;
+  gap: 8px;
+}
+
+.tenant-user-strip span {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: #ffffff;
+}
+
+.tenant-user-strip strong {
+  color: #0f172a;
+}
+
+.tenant-user-card-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
 .incident-list p {
   display: -webkit-box;
   overflow: hidden;
@@ -2734,7 +2964,12 @@ html[data-theme="dark"] .subscription-card,
 html[data-theme="dark"] .subscription-health-strip,
 html[data-theme="dark"] .aggregate-box,
 html[data-theme="dark"] .profile-card-stats span,
-html[data-theme="dark"] .yaml-preview {
+html[data-theme="dark"] .yaml-preview,
+html[data-theme="dark"] .tenant-card,
+html[data-theme="dark"] .tenant-user-card,
+html[data-theme="dark"] .tenant-metric-box,
+html[data-theme="dark"] .tenant-user-strip span,
+html[data-theme="dark"] .tenant-scope-chips span {
   border-color: rgb(148 163 184 / 18%);
   color: #e5edf7;
   background: rgb(15 23 42 / 72%);
@@ -2749,10 +2984,20 @@ html[data-theme="dark"] .subscription-card.selected {
   box-shadow: inset 0 0 0 1px rgb(56 189 248 / 24%), 0 14px 34px rgb(14 165 233 / 12%);
 }
 
+html[data-theme="dark"] .tenant-card.selected {
+  border-color: rgb(20 184 166 / 44%);
+  background: rgb(20 83 91 / 34%);
+  box-shadow: inset 0 0 0 1px rgb(20 184 166 / 18%), 0 14px 34px rgb(20 184 166 / 10%);
+}
+
 html[data-theme="dark"] .subscription-card strong,
 html[data-theme="dark"] .subscription-health-strip strong,
 html[data-theme="dark"] .profile-card-head strong,
-html[data-theme="dark"] .yaml-preview {
+html[data-theme="dark"] .yaml-preview,
+html[data-theme="dark"] .tenant-card-head strong,
+html[data-theme="dark"] .tenant-meter strong,
+html[data-theme="dark"] .tenant-metric-box strong,
+html[data-theme="dark"] .tenant-user-strip strong {
   color: #e5edf7;
 }
 
@@ -2760,7 +3005,13 @@ html[data-theme="dark"] .subscription-card span,
 html[data-theme="dark"] .subscription-card-meta span,
 html[data-theme="dark"] .subscription-health-strip span,
 html[data-theme="dark"] .profile-card-head span,
-html[data-theme="dark"] .profile-card-stats span {
+html[data-theme="dark"] .profile-card-stats span,
+html[data-theme="dark"] .tenant-card-head span,
+html[data-theme="dark"] .tenant-meter span,
+html[data-theme="dark"] .tenant-card-stats span,
+html[data-theme="dark"] .tenant-metric-box span,
+html[data-theme="dark"] .tenant-policy-line > span,
+html[data-theme="dark"] .tenant-user-strip span {
   color: #94a3b8;
 }
 
@@ -2803,6 +3054,15 @@ html[data-theme="dark"] .notice-danger {
   }
 
   .subscription-command-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .tenant-ops-grid,
+  .tenant-user-card-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .tenant-detail-grid.compact {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
@@ -2855,6 +3115,11 @@ html[data-theme="dark"] .notice-danger {
   }
 
   .profile-card-head {
+    grid-template-columns: 1fr;
+  }
+
+  .tenant-detail-grid,
+  .tenant-detail-grid.compact {
     grid-template-columns: 1fr;
   }
 

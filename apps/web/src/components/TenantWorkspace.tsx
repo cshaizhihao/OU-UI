@@ -1,14 +1,13 @@
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { createPanelUser, createTenant, type DashboardDTO } from "../api";
 import {
-  formatBytes,
   gbToBytes,
-  MiniTable,
   NoticeRow,
   parseCSV,
   SectionHeader,
   ViewHeading
 } from "./ConsolePrimitives";
+import { TenantOperationsDesk } from "./TenantOperationsDesk";
 
 type TenantWorkspaceProps = {
   data: DashboardDTO | null;
@@ -29,7 +28,7 @@ export function TenantWorkspace({ data, disabled = false, onRefresh }: TenantWor
   });
   const [panelUser, setPanelUser] = useState({
     username: "operator",
-    password: "change-me-now",
+    password: "",
     tenantId: "",
     nodeAccess: firstAgentId,
     monthlyTrafficGb: 256,
@@ -37,6 +36,14 @@ export function TenantWorkspace({ data, disabled = false, onRefresh }: TenantWor
     maxConnections: 500
   });
   const controlsDisabled = disabled || !data;
+
+  useEffect(() => {
+    if (!firstAgentId) {
+      return;
+    }
+    setTenant((current) => (current.nodeAccess ? current : { ...current, nodeAccess: firstAgentId }));
+    setPanelUser((current) => (current.nodeAccess ? current : { ...current, nodeAccess: firstAgentId }));
+  }, [firstAgentId]);
 
   async function runAction(label: string, action: () => Promise<unknown>) {
     setBusy(label);
@@ -93,6 +100,8 @@ export function TenantWorkspace({ data, disabled = false, onRefresh }: TenantWor
       />
       {message ? <NoticeRow>{message}</NoticeRow> : null}
 
+      <TenantOperationsDesk data={data} />
+
       <div className="workspace-grid two">
         <section className="panel">
           <SectionHeader eyebrow="Tenant" title="创建租户" />
@@ -144,11 +153,25 @@ export function TenantWorkspace({ data, disabled = false, onRefresh }: TenantWor
             </label>
             <label>
               密码
-              <input value={panelUser.password} onChange={(event) => setPanelUser({ ...panelUser, password: event.target.value })} />
+              <input
+                minLength={10}
+                placeholder="至少 10 位临时密码"
+                required
+                type="password"
+                value={panelUser.password}
+                onChange={(event) => setPanelUser({ ...panelUser, password: event.target.value })}
+              />
             </label>
             <label>
               租户 ID
-              <input value={panelUser.tenantId} onChange={(event) => setPanelUser({ ...panelUser, tenantId: event.target.value })} />
+              <select value={panelUser.tenantId} onChange={(event) => setPanelUser({ ...panelUser, tenantId: event.target.value })}>
+                <option value="">主租户</option>
+                {(data?.control.tenants ?? []).map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.name}
+                  </option>
+                ))}
+              </select>
             </label>
             <label>
               节点访问
@@ -184,30 +207,6 @@ export function TenantWorkspace({ data, disabled = false, onRefresh }: TenantWor
           </form>
         </section>
       </div>
-
-      <section className="panel">
-        <SectionHeader eyebrow="配额矩阵" title="租户与用户" />
-        <MiniTable
-          columns={["租户", "状态", "月度配额", "单节点配额", "连接数"]}
-          rows={(data?.control.tenants ?? []).map((item) => [
-            item.name,
-            item.status,
-            formatBytes(item.monthlyTrafficQuota ?? 0),
-            formatBytes(item.perNodeTrafficQuota ?? 0),
-            String(item.maxConnections ?? 0)
-          ])}
-        />
-        <MiniTable
-          columns={["用户", "租户", "角色", "月度配额", "单节点配额"]}
-          rows={(data?.control.users ?? []).map((item) => [
-            item.username,
-            item.tenantId || "主租户",
-            item.role,
-            formatBytes(item.monthlyTrafficQuota ?? 0),
-            formatBytes(item.perNodeTrafficQuota ?? 0)
-          ])}
-        />
-      </section>
     </div>
   );
 }
