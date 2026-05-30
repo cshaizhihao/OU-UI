@@ -225,6 +225,81 @@ func TestAggregateSubscriptionEndpointServesMultipleFormats(t *testing.T) {
 	}
 }
 
+func TestNodeShareEndpointReturnsSingleManagedNodeURI(t *testing.T) {
+	db := openTestDB(t)
+	cfg := config.ServerConfig{
+		SecurePath:     "/ou-ui",
+		AdminUser:      "admin",
+		AdminPassword:  "password",
+		JWTSecret:      "test-secret",
+		AgentJoinToken: "join",
+	}
+	const rawKey = "ouak_node_share_read"
+	if err := db.Create(&models.APIKey{
+		ID:      "key_node_share_read",
+		Name:    "Node share read",
+		KeyHash: hashSecret(rawKey),
+		Scopes:  datatypes.JSON(`["panel:read"]`),
+		Status:  "active",
+	}).Error; err != nil {
+		t.Fatalf("seed api key: %v", err)
+	}
+	now := time.Now().UTC()
+	if err := db.Create(&models.Agent{
+		ID:         "agt_share",
+		Name:       "Share Agent",
+		Status:     models.AgentStatusOnline,
+		AuthStatus: models.AgentAuthActive,
+		PublicIP:   "203.0.113.10",
+		LastSeenAt: &now,
+	}).Error; err != nil {
+		t.Fatalf("seed agent: %v", err)
+	}
+	if err := db.Create(&models.Node{
+		ID:       "node_share",
+		AgentID:  "agt_share",
+		Name:     "Edge VLESS",
+		Runtime:  "xray",
+		Protocol: "vless",
+		Status:   "running",
+		Spec: datatypes.JSON(`{
+			"runtime":"xray",
+			"protocol":"vless",
+			"listen":"0.0.0.0",
+			"port":443,
+			"settings":{"uuid":"00000000-0000-0000-0000-000000000123","encryption":"none"}
+		}`),
+	}).Error; err != nil {
+		t.Fatalf("seed node: %v", err)
+	}
+	router := NewRouter(cfg, db)
+
+	req := httptest.NewRequest(http.MethodGet, "/ou-ui/api/v1/nodes/node_share/share", nil)
+	req.Header.Set("Authorization", "Bearer "+rawKey)
+	resp := httptest.NewRecorder()
+	router.ServeHTTP(resp, req)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected node share response, got %d: %s", resp.Code, resp.Body.String())
+	}
+	var body struct {
+		NodeID string `json:"nodeId"`
+		Name   string `json:"name"`
+		Share  string `json:"share"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode node share response: %v", err)
+	}
+	if body.NodeID != "node_share" || body.Name != "Edge VLESS" {
+		t.Fatalf("unexpected share identity: %+v", body)
+	}
+	if !strings.HasPrefix(body.Share, "vless://00000000-0000-0000-0000-000000000123@203.0.113.10:443") {
+		t.Fatalf("unexpected share uri: %s", body.Share)
+	}
+	if !strings.Contains(body.Share, "encryption=none") || !strings.Contains(body.Share, "#Edge+VLESS") {
+		t.Fatalf("expected encryption and fragment in share uri: %s", body.Share)
+	}
+}
+
 func TestXrayRoutingConfigCoversGeoSiteGeoIPAndProtocolRules(t *testing.T) {
 	db := openTestDB(t)
 	h := Handler{db: db}

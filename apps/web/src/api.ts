@@ -236,6 +236,12 @@ export type CreateNodeResponse = {
   task: ControlTask;
 };
 
+export type NodeShare = {
+  nodeId: string;
+  name: string;
+  share: string;
+};
+
 export type ControlPlaneDTO = {
   nodes: ManagedNode[];
   traffic: NodeTraffic[];
@@ -472,6 +478,10 @@ export async function createClashProfile(input: {
 
 export function aggregateSubscriptionURL(format: AggregateSubscriptionFormat = "clash"): string {
   return `${apiBase()}/subscriptions/aggregate?format=${encodeURIComponent(format)}`;
+}
+
+export async function loadNodeShare(nodeId: string): Promise<NodeShare> {
+  return request<NodeShare>(`/nodes/${encodeURIComponent(nodeId)}/share`);
 }
 
 export function clashProfileURL(id: string): string {

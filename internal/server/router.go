@@ -40,6 +40,7 @@ func NewRouter(cfg config.ServerConfig, db *gorm.DB) *gin.Engine {
 	api.PATCH("/agents/:id/tasks/:taskId", h.requireAgentAuth(), h.agentUpdateTask)
 	api.GET("/nodes", h.requirePanelAuth(), h.listNodes)
 	api.POST("/nodes", h.requirePanelAuth(), h.createNode)
+	api.GET("/nodes/:id/share", h.requirePanelAuth(), h.getNodeShare)
 	api.GET("/traffic/nodes", h.requirePanelAuth(), h.listNodeTraffic)
 	api.GET("/traffic/nodes/:id/samples", h.requirePanelAuth(), h.listNodeTrafficSamples)
 	api.GET("/routing/rules", h.requirePanelAuth(), h.listRoutingRules)

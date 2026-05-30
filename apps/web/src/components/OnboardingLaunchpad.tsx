@@ -4,9 +4,11 @@ import {
   aggregateSubscriptionURL,
   createNode,
   loadAgentInstallScript,
+  loadNodeShare,
   panelBaseURL,
   type AggregateSubscriptionFormat,
-  type DashboardDTO
+  type DashboardDTO,
+  type NodeShare
 } from "../api";
 import type { Agent } from "../data";
 import { launchpadCopy, starterStepDefinitions } from "../onboarding";
@@ -33,13 +35,21 @@ export function OnboardingLaunchpad({ agents, data, onRefresh }: OnboardingLaunc
   const [nodeName, setNodeName] = useState("ou-ui-vless-01");
   const [nodePort, setNodePort] = useState(443);
   const [subscriptionFormat, setSubscriptionFormat] = useState<AggregateSubscriptionFormat>("clash");
+  const [shareNodeId, setShareNodeId] = useState("");
+  const [nodeShare, setNodeShare] = useState<NodeShare | null>(null);
   const [installScript, setInstallScript] = useState("");
   const [busy, setBusy] = useState("");
   const [notice, setNotice] = useState("");
 
   const selectedAgent = agents.find((agent) => agent.id === selectedAgentId) ?? onlineAgents[0] ?? agents[0];
+  const selectedShareNode = nodes.find((node) => node.id === shareNodeId) ?? nodes[0];
   const command = useMemo(() => agentInstallCommand(serverUrl), [serverUrl]);
   const subscriptionUrl = useMemo(() => aggregateSubscriptionURL(subscriptionFormat), [subscriptionFormat]);
+  const sharePreview = selectedShareNode && nodeShare?.nodeId === selectedShareNode.id ? nodeShare.share : subscriptionUrl;
+  const aggregateAction = starterStepDefinitions[2].copy[language].action;
+  const singleNodeAction = language === "zh" ? "复制节点链接" : "Copy node link";
+  const nodeLinkLabel = language === "zh" ? "节点链接" : "Node link";
+  const fallbackNotice = language === "zh" ? "节点链接暂不可用，已复制聚合订阅" : "Node link unavailable; copied aggregate subscription";
   const starterHealth = nodes.length > 0 && onlineAgents.length > 0 && failedTasks === 0;
   const stepTones = buildStepTones({
     failedTasks,
@@ -95,6 +105,25 @@ export function OnboardingLaunchpad({ agents, data, onRefresh }: OnboardingLaunc
       onRefresh?.();
     } catch (err) {
       setNotice(err instanceof Error ? err.message : copy.copyFailed);
+    } finally {
+      setBusy("");
+    }
+  }
+
+  async function handleCopyShare() {
+    if (!selectedShareNode) {
+      await copyValue(subscriptionUrl, aggregateAction);
+      return;
+    }
+    setBusy("share");
+    setNotice("");
+    try {
+      const result = await loadNodeShare(selectedShareNode.id);
+      setNodeShare(result);
+      await copyValue(result.share, singleNodeAction);
+    } catch {
+      setNodeShare(null);
+      await copyValue(subscriptionUrl, fallbackNotice);
     } finally {
       setBusy("");
     }
@@ -195,6 +224,24 @@ export function OnboardingLaunchpad({ agents, data, onRefresh }: OnboardingLaunc
 
         <section className="panel launchpad-panel">
           <SectionHeader eyebrow="Step 03" title={starterStepDefinitions[2].copy[language].title} />
+          {nodes.length ? (
+            <label>
+              {nodeLinkLabel}
+              <select
+                value={selectedShareNode?.id ?? ""}
+                onChange={(event) => {
+                  setShareNodeId(event.target.value);
+                  setNodeShare(null);
+                }}
+              >
+                {nodes.map((node) => (
+                  <option value={node.id} key={node.id}>
+                    {node.name} - {node.status}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : null}
           <label>
             {copy.subscriptionFormat}
             <select
@@ -208,12 +255,19 @@ export function OnboardingLaunchpad({ agents, data, onRefresh }: OnboardingLaunc
             </select>
           </label>
           <div className="command-preview">
-            <span>{starterStepDefinitions[2].copy[language].action}</span>
-            <code>{subscriptionUrl}</code>
+            <span>{selectedShareNode ? singleNodeAction : aggregateAction}</span>
+            <code>{sharePreview}</code>
           </div>
-          <button className="primary-button" onClick={() => copyValue(subscriptionUrl, starterStepDefinitions[2].copy[language].action)} type="button">
-            {starterStepDefinitions[2].copy[language].action}
-          </button>
+          <div className="button-row">
+            <button className="primary-button" disabled={busy === "share"} onClick={handleCopyShare} type="button">
+              {busy === "share" ? "..." : selectedShareNode ? singleNodeAction : aggregateAction}
+            </button>
+            {selectedShareNode ? (
+              <button className="ghost-button" onClick={() => copyValue(subscriptionUrl, aggregateAction)} type="button">
+                {aggregateAction}
+              </button>
+            ) : null}
+          </div>
         </section>
 
         <section className="panel launchpad-panel status-panel">

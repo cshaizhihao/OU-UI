@@ -1422,6 +1422,31 @@ func (h Handler) getAggregateSubscription(c *gin.Context) {
 	}
 }
 
+func (h Handler) getNodeShare(c *gin.Context) {
+	nodeID := strings.TrimSpace(c.Param("id"))
+	for _, proxy := range h.clashProxies() {
+		if proxyString(proxy, "_nodeId", "id") != nodeID {
+			continue
+		}
+		if !canAccessNode(c, nodeID) && !canAccessNode(c, proxyString(proxy, "_agentId")) {
+			c.JSON(http.StatusForbidden, gin.H{"error": "node is outside current tenant access"})
+			return
+		}
+		share := proxyShareURI(proxy)
+		if share == "" {
+			c.JSON(http.StatusNotFound, gin.H{"error": "node share uri is unavailable"})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{
+			"nodeId": nodeID,
+			"name":   proxyString(proxy, "name"),
+			"share":  share,
+		})
+		return
+	}
+	c.JSON(http.StatusNotFound, gin.H{"error": "node not found"})
+}
+
 type clashProfileRequest struct {
 	Name          string           `json:"name"`
 	RuleProviders []map[string]any `json:"ruleProviders"`
@@ -1566,12 +1591,13 @@ func (h Handler) clashProxies() []map[string]any {
 		}
 		protocol := strings.ToLower(fmt.Sprint(spec["protocol"]))
 		proxy := map[string]any{
-			"name":    node.Name,
-			"type":    clashType(protocol),
-			"server":  server,
-			"port":    intFromAny(spec["port"]),
-			"_nodeId": node.ID,
-			"_source": "managed",
+			"name":     node.Name,
+			"type":     clashType(protocol),
+			"server":   server,
+			"port":     intFromAny(spec["port"]),
+			"_agentId": node.AgentID,
+			"_nodeId":  node.ID,
+			"_source":  "managed",
 		}
 		if uuid := firstMapString(settings, "uuid", "id"); uuid != "" {
 			proxy["uuid"] = uuid
@@ -2296,6 +2322,7 @@ func openAPIPaths() gin.H {
 		"/agents/install-script":            gin.H{"get": apiOperation("Agents", "Render the Agent install script", "panel:read", nil)},
 		"/agents/{id}/network-optimization": gin.H{"post": apiOperation("Agents", "Queue BBR/sysctl host optimization", "panel:write", gin.H{"profile": "bbr-v3", "rebootPolicy": "manual"}, pathParam("id", "Agent ID"))},
 		"/nodes":                            gin.H{"get": apiOperation("Nodes", "List visible generated proxy nodes", "panel:read", nil), "post": apiOperation("Nodes", "Create a managed proxy node and deployment task", "panel:write", gin.H{"agentId": "agt_x", "runtime": "xray", "protocol": "vless", "port": 443})},
+		"/nodes/{id}/share":                 gin.H{"get": apiOperation("Nodes", "Read a single node share URI for client import", "panel:read", nil, pathParam("id", "Node ID"))},
 		"/traffic/nodes":                    gin.H{"get": apiOperation("Traffic", "List latest per-node traffic samples", "panel:read", nil)},
 		"/traffic/nodes/{id}/samples":       gin.H{"get": apiOperation("Traffic", "List historical samples for one node", "panel:read", nil, pathParam("id", "Node ID"), queryParam("limit", "Maximum samples"))},
 		"/routing/rules":                    gin.H{"get": apiOperation("Routing", "List routing rules", "panel:read", nil), "post": apiOperation("Routing", "Create GeoIP/GeoSite/domain/protocol routing rule", "panel:write", gin.H{"name": "Block ads", "ruleType": "ads", "match": "category-ads-all", "action": "block"})},

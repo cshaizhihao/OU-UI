@@ -64,14 +64,14 @@ export const starterStepDefinitions: readonly StarterStepDefinition[] = [
     copy: {
       zh: {
         label: "03",
-        title: "复制订阅链接",
-        description: "直接复制 Clash、V2Ray 或 Sing-box 聚合订阅地址。",
+        title: "复制订阅或节点链接",
+        description: "优先复制单节点链接，也可以继续复制 Clash、V2Ray 或 Sing-box 聚合订阅地址。",
         action: "复制订阅"
       },
       en: {
         label: "03",
-        title: "Copy subscription",
-        description: "Copy the Clash, V2Ray, or Sing-box aggregate subscription URL.",
+        title: "Copy subscription or node link",
+        description: "Copy a single node link first, with Clash, V2Ray, or Sing-box aggregate subscriptions still available.",
         action: "Copy subscription"
       }
     }
