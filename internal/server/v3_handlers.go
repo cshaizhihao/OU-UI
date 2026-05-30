@@ -19,6 +19,7 @@ import (
 	"github.com/cshaizhihao/OU-UI/internal/models"
 	"github.com/cshaizhihao/OU-UI/internal/tuning"
 	"github.com/gin-gonic/gin"
+	"gopkg.in/yaml.v3"
 	"gorm.io/datatypes"
 	"gorm.io/gorm"
 )
@@ -150,6 +151,14 @@ func (h Handler) evaluateAgentAlerts(agentID string, metrics agentruntime.Runtim
 }
 
 func (h Handler) createAlert(severity, sourceType, sourceID, eventType, message string, payload map[string]any) {
+	since := time.Now().UTC().Add(-10 * time.Minute)
+	var recent int64
+	_ = h.db.Model(&models.AlertEvent{}).
+		Where("source_type = ? AND source_id = ? AND event_type = ? AND created_at >= ?", sourceType, sourceID, eventType, since).
+		Count(&recent).Error
+	if recent > 0 {
+		return
+	}
 	content, _ := json.Marshal(payload)
 	event := models.AlertEvent{
 		ID:         "alr_" + randomHex(8),
@@ -172,6 +181,96 @@ func (h Handler) listAlerts(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"items": events})
+}
+
+func (h Handler) runMaintenanceSweep() {
+	h.expireLeases()
+	h.markOfflineAgents()
+	h.evaluateTenantQuotas()
+	h.recomputeLoadBalancers()
+}
+
+func (h Handler) markOfflineAgents() {
+	cutoff := time.Now().UTC().Add(-h.cfg.AgentOfflineAfter())
+	var agents []models.Agent
+	if err := h.db.Where("(auth_status = ? OR auth_status = '') AND (last_seen_at IS NULL OR last_seen_at < ?)", models.AgentAuthActive, cutoff).Find(&agents).Error; err != nil {
+		return
+	}
+	for _, agent := range agents {
+		if agent.AuthStatus == models.AgentAuthRevoked {
+			continue
+		}
+		if agent.Status != models.AgentStatusOffline {
+			_ = h.db.Model(&models.Agent{}).Where("id = ?", agent.ID).Update("status", models.AgentStatusOffline).Error
+		}
+		h.createAlert("critical", "agent", agent.ID, "agent.offline", "Agent heartbeat timed out", map[string]any{
+			"lastSeenAt": agent.LastSeenAt,
+			"cutoff":     cutoff.Format(time.RFC3339),
+		})
+	}
+}
+
+func (h Handler) evaluateTenantQuotas() {
+	var tenants []models.Tenant
+	if err := h.db.Where("status = ? AND (monthly_traffic_quota > 0 OR max_connections > 0)", "active").Find(&tenants).Error; err != nil {
+		return
+	}
+	for _, tenant := range tenants {
+		nodeAccess := stringListFromJSON(tenant.NodeAccess)
+		var samples []models.NodeTrafficSample
+		query := h.db.Order("collected_at desc").Limit(5000)
+		if len(nodeAccess) > 0 && !containsWildcard(nodeAccess) {
+			query = query.Where("node_id IN ? OR agent_id IN ?", nodeAccess, nodeAccess)
+		}
+		if err := query.Find(&samples).Error; err != nil {
+			continue
+		}
+		latest := map[string]models.NodeTrafficSample{}
+		for _, sample := range samples {
+			if _, ok := latest[sample.NodeID]; !ok {
+				latest[sample.NodeID] = sample
+			}
+		}
+		var used uint64
+		var connections int
+		for _, sample := range latest {
+			used += sample.RxBytes + sample.TxBytes
+			connections += sample.Connections
+		}
+		if tenant.MonthlyTrafficQuota > 0 {
+			ratio := float64(used) / float64(tenant.MonthlyTrafficQuota)
+			if used >= tenant.MonthlyTrafficQuota {
+				h.createAlert("critical", "tenant", tenant.ID, "tenant.quota.exceeded", "Tenant monthly traffic quota exceeded", map[string]any{"usedBytes": used, "quotaBytes": tenant.MonthlyTrafficQuota})
+			} else if ratio >= 0.9 {
+				h.createAlert("warning", "tenant", tenant.ID, "tenant.quota.warning", "Tenant monthly traffic quota is above 90 percent", map[string]any{"usedBytes": used, "quotaBytes": tenant.MonthlyTrafficQuota})
+			}
+		}
+		if tenant.MaxConnections > 0 && connections >= tenant.MaxConnections {
+			h.createAlert("critical", "tenant", tenant.ID, "tenant.connections.exceeded", "Tenant connection quota exceeded", map[string]any{"connections": connections, "maxConnections": tenant.MaxConnections})
+		}
+	}
+}
+
+func (h Handler) recomputeLoadBalancers() {
+	var groups []models.LoadBalancerGroup
+	if err := h.db.Find(&groups).Error; err != nil {
+		return
+	}
+	for _, group := range groups {
+		var members []map[string]any
+		if err := json.Unmarshal(group.Members, &members); err != nil {
+			continue
+		}
+		decision := h.loadBalancerDecision(members)
+		status := "ready"
+		if strings.Contains(string(decision), `"selected":""`) {
+			status = "degraded"
+		}
+		_ = h.db.Model(&models.LoadBalancerGroup{}).Where("id = ?", group.ID).Updates(map[string]any{
+			"last_decision": decision,
+			"status":        status,
+		}).Error
+	}
 }
 
 func (h Handler) listNodeTraffic(c *gin.Context) {
@@ -349,10 +448,74 @@ func (h Handler) deleteRoutingRule(c *gin.Context) {
 }
 
 func (h Handler) exportXrayRouting(c *gin.Context) {
-	var rules []models.RoutingRule
-	if err := h.db.Where("enabled = ?", true).Order("priority asc, created_at asc").Find(&rules).Error; err != nil {
+	config, err := h.xrayRoutingConfig()
+	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "query routing rules failed"})
 		return
+	}
+	c.JSON(http.StatusOK, gin.H{"routing": config})
+}
+
+type routingApplyRequest struct {
+	AgentIDs []string `json:"agentIds"`
+}
+
+func (h Handler) applyRouting(c *gin.Context) {
+	var req routingApplyRequest
+	_ = c.ShouldBindJSON(&req)
+	config, err := h.xrayRoutingConfig()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "query routing rules failed"})
+		return
+	}
+	payload, _ := json.Marshal(map[string]any{
+		"runtime":     "xray",
+		"routing":     config,
+		"generatedAt": time.Now().UTC().Format(time.RFC3339),
+	})
+	var agents []models.Agent
+	query := h.db.Order("updated_at desc")
+	if len(req.AgentIDs) > 0 {
+		query = query.Where("id IN ?", compactStringList(req.AgentIDs))
+	}
+	if allowed, limited := nodeAccessFilter(c); limited {
+		query = query.Where("id IN ?", allowed)
+	}
+	if err := query.Find(&agents).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "query agents failed"})
+		return
+	}
+	tasks := make([]models.Task, 0, len(agents))
+	for i := range agents {
+		agent := agents[i]
+		h.decorateAgent(&agent)
+		if agent.Status == models.AgentStatusOffline || !agentHasCapability(agent, models.TaskTypeRoutingApply) {
+			continue
+		}
+		task := models.Task{
+			ID:          "tsk_" + randomHex(8),
+			AgentID:     agent.ID,
+			Type:        models.TaskTypeRoutingApply,
+			Status:      models.TaskStatusQueued,
+			Payload:     datatypes.JSON(payload),
+			MaxAttempts: 2,
+		}
+		tasks = append(tasks, task)
+	}
+	if len(tasks) > 0 {
+		if err := h.db.Create(&tasks).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "create routing apply tasks failed"})
+			return
+		}
+	}
+	h.audit("panel", "routing.apply", strconv.Itoa(len(tasks)), "")
+	c.JSON(http.StatusOK, gin.H{"tasks": tasks, "count": len(tasks)})
+}
+
+func (h Handler) xrayRoutingConfig() (gin.H, error) {
+	var rules []models.RoutingRule
+	if err := h.db.Where("enabled = ?", true).Order("priority asc, created_at asc").Find(&rules).Error; err != nil {
+		return nil, err
 	}
 	out := make([]map[string]any, 0, len(rules))
 	for _, rule := range rules {
@@ -379,7 +542,7 @@ func (h Handler) exportXrayRouting(c *gin.Context) {
 		}
 		out = append(out, xrayRule)
 	}
-	c.JSON(http.StatusOK, gin.H{"routing": gin.H{"domainStrategy": "IPIfNonMatch", "rules": out}})
+	return gin.H{"domainStrategy": "IPIfNonMatch", "rules": out}, nil
 }
 
 type loadBalancerRequest struct {
@@ -828,7 +991,7 @@ func (h Handler) generateClashYAML(req clashProfileRequest) string {
 	if len(proxyNames) == 0 {
 		proxyNames = []string{"DIRECT"}
 	}
-	groups := req.ProxyGroups
+	groups := cloneMapSlice(req.ProxyGroups)
 	if len(groups) == 0 {
 		groups = []map[string]any{
 			{"name": "OU-Auto", "type": "url-test", "url": "https://www.gstatic.com/generate_204", "interval": 300, "proxies": proxyNames},
@@ -844,44 +1007,33 @@ func (h Handler) generateClashYAML(req clashProfileRequest) string {
 		}
 		rules = append(rules, "MATCH,OU-Auto")
 	}
-	var b strings.Builder
-	b.WriteString("mixed-port: 7890\nallow-lan: true\nmode: rule\nlog-level: warning\nexternal-controller: 127.0.0.1:9090\n\n")
-	b.WriteString("proxies:\n")
-	for _, proxy := range proxies {
-		b.WriteString("  - ")
-		b.WriteString(inlineYAML(proxy))
-		b.WriteByte('\n')
-	}
-	b.WriteString("\nproxy-groups:\n")
-	for _, group := range groups {
-		b.WriteString("  - ")
-		b.WriteString(inlineYAML(group))
-		b.WriteByte('\n')
+	document := map[string]any{
+		"mixed-port":          7890,
+		"allow-lan":           true,
+		"mode":                "rule",
+		"log-level":           "warning",
+		"external-controller": "127.0.0.1:9090",
+		"proxies":             proxies,
+		"proxy-groups":        groups,
+		"rules":               rules,
 	}
 	if len(req.RuleProviders) > 0 {
-		b.WriteString("\nrule-providers:\n")
-		for _, provider := range req.RuleProviders {
+		providers := map[string]any{}
+		for _, provider := range cloneMapSlice(req.RuleProviders) {
 			name := strings.TrimSpace(fmt.Sprint(provider["name"]))
 			if name == "" {
 				name = "provider-" + randomHex(3)
 			}
 			delete(provider, "name")
-			b.WriteString("  ")
-			b.WriteString(quoteYAML(name))
-			b.WriteString(": ")
-			b.WriteString(inlineYAML(provider))
-			b.WriteByte('\n')
+			providers[name] = provider
 		}
+		document["rule-providers"] = providers
 	}
-	b.WriteString("\nrules:\n")
-	for _, rule := range rules {
-		if strings.TrimSpace(rule) != "" {
-			b.WriteString("  - ")
-			b.WriteString(quoteYAML(rule))
-			b.WriteByte('\n')
-		}
+	content, err := yaml.Marshal(document)
+	if err != nil {
+		return ""
 	}
-	return b.String()
+	return string(content)
 }
 
 func (h Handler) clashProxies() []map[string]any {
@@ -1065,6 +1217,7 @@ func (h Handler) apiDocs(c *gin.Context) {
 			"/nodes":                            gin.H{"get": gin.H{"summary": "List managed nodes"}, "post": gin.H{"summary": "Create managed node"}},
 			"/traffic/nodes":                    gin.H{"get": gin.H{"summary": "List latest per-node traffic samples"}},
 			"/routing/rules":                    gin.H{"get": gin.H{"summary": "List routing rules"}, "post": gin.H{"summary": "Create routing rule"}},
+			"/routing/apply":                    gin.H{"post": gin.H{"summary": "Queue routing.apply tasks for capable Agents"}},
 			"/load-balancers":                   gin.H{"get": gin.H{"summary": "List HA groups"}, "post": gin.H{"summary": "Create HA group"}},
 			"/webhooks":                         gin.H{"get": gin.H{"summary": "List alert webhooks"}, "post": gin.H{"summary": "Create alert webhook"}},
 			"/subscriptions":                    gin.H{"get": gin.H{"summary": "List external subscriptions"}, "post": gin.H{"summary": "Create external subscription"}},
@@ -1195,8 +1348,11 @@ func (h Handler) remoteCopilotAnswer(question string, context map[string]any) (s
 
 func parseExternalNodes(subscriptionID, content string) []models.ExternalNode {
 	content = decodeMaybeBase64(strings.TrimSpace(content))
+	nodes := parseClashYAMLNodes(subscriptionID, content)
+	if len(nodes) > 0 {
+		return nodes
+	}
 	lines := strings.Split(content, "\n")
-	nodes := make([]models.ExternalNode, 0, len(lines))
 	for index, line := range lines {
 		line = strings.TrimSpace(line)
 		if line == "" || strings.HasPrefix(line, "#") {
@@ -1216,6 +1372,45 @@ func parseExternalNodes(subscriptionID, content string) []models.ExternalNode {
 		}
 	}
 	return nodes
+}
+
+func parseClashYAMLNodes(subscriptionID, content string) []models.ExternalNode {
+	var doc struct {
+		Proxies []map[string]any `yaml:"proxies"`
+	}
+	if err := yaml.Unmarshal([]byte(content), &doc); err != nil || len(doc.Proxies) == 0 {
+		return nil
+	}
+	nodes := make([]models.ExternalNode, 0, len(doc.Proxies))
+	for index, proxy := range doc.Proxies {
+		node, ok := externalNodeFromProxyMap(subscriptionID, proxy, index)
+		if ok {
+			nodes = append(nodes, node)
+		}
+	}
+	return nodes
+}
+
+func externalNodeFromProxyMap(subscriptionID string, config map[string]any, index int) (models.ExternalNode, bool) {
+	name := strings.TrimSpace(fmt.Sprint(config["name"]))
+	protocol := strings.TrimSpace(fmt.Sprint(config["type"]))
+	host := strings.TrimSpace(fmt.Sprint(config["server"]))
+	port := intFromAny(config["port"])
+	if name == "" {
+		name = defaultNonEmpty(protocol, "proxy") + "-" + strconv.Itoa(index+1)
+	}
+	raw, _ := json.Marshal(config)
+	return models.ExternalNode{
+		ID:             stableExternalNodeID(subscriptionID, string(raw)),
+		SubscriptionID: subscriptionID,
+		Name:           name,
+		Protocol:       protocol,
+		Address:        host,
+		Port:           port,
+		Source:         "clash",
+		Config:         mustJSON(config),
+		Enabled:        true,
+	}, protocol != "" && host != "" && port > 0
 }
 
 func parseShareURI(subscriptionID, raw string, index int) (models.ExternalNode, bool) {
@@ -1558,6 +1753,30 @@ func mustJSON(value any) datatypes.JSON {
 func compactJSON(value any) string {
 	content, _ := json.Marshal(value)
 	return string(content)
+}
+
+func cloneMapSlice(values []map[string]any) []map[string]any {
+	if len(values) == 0 {
+		return nil
+	}
+	out := make([]map[string]any, 0, len(values))
+	for _, value := range values {
+		next := make(map[string]any, len(value))
+		for key, item := range value {
+			next[key] = item
+		}
+		out = append(out, next)
+	}
+	return out
+}
+
+func containsWildcard(values []string) bool {
+	for _, value := range values {
+		if strings.TrimSpace(value) == "*" {
+			return true
+		}
+	}
+	return false
 }
 
 func defaultNonEmpty(value, fallback string) string {

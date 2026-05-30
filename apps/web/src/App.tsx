@@ -46,11 +46,13 @@ export function App() {
     try {
       const session = await login(username, password);
       setUser(session.user ?? { id: username, username, role: "operator" });
+      setLoading(true);
       setDashboard(await loadDashboard());
     } catch (err) {
       setError(err instanceof Error ? err.message : "Login failed");
       clearStoredToken();
     } finally {
+      setLoading(false);
       setLoginLoading(false);
     }
   }

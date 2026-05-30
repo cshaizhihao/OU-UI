@@ -2,6 +2,7 @@ package server
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 	"time"
 
@@ -65,6 +66,47 @@ func canAccessNode(c *gin.Context, id string) bool {
 	for _, item := range allowed {
 		if strings.EqualFold(strings.TrimSpace(item), strings.TrimSpace(id)) {
 			return true
+		}
+	}
+	return false
+}
+
+func authorizePanelRequest(c *gin.Context) bool {
+	if role, _ := c.Get("role"); strings.EqualFold(strings.TrimSpace(fmt.Sprint(role)), "owner") {
+		return true
+	}
+	required := "panel:read"
+	switch c.Request.Method {
+	case "GET", "HEAD", "OPTIONS":
+		required = "panel:read"
+	default:
+		required = "panel:write"
+	}
+	raw, exists := c.Get("scopes")
+	if !exists {
+		return false
+	}
+	scopes, ok := raw.([]string)
+	if !ok {
+		return false
+	}
+	return scopeAllows(scopes, required)
+}
+
+func scopeAllows(scopes []string, required string) bool {
+	for _, scope := range scopes {
+		normalized := strings.ToLower(strings.TrimSpace(scope))
+		switch normalized {
+		case "*", strings.ToLower(required):
+			return true
+		case "panel:*":
+			if strings.HasPrefix(required, "panel:") {
+				return true
+			}
+		case "panel:write":
+			if required == "panel:read" {
+				return true
+			}
 		}
 	}
 	return false

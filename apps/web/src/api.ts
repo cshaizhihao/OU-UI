@@ -46,9 +46,177 @@ type BackendAgent = {
   authStatus?: string;
 };
 
+export type ManagedNode = {
+  id: string;
+  agentId: string;
+  name: string;
+  runtime: string;
+  protocol: string;
+  status: string;
+  serviceStatus?: string;
+  configPath?: string;
+  lastError?: string;
+  updatedAt?: string;
+};
+
+export type NodeTraffic = {
+  nodeId: string;
+  agentId: string;
+  rxBytes: number;
+  txBytes: number;
+  rxRateBps: number;
+  txRateBps: number;
+  connections: number;
+  collectedAt: string;
+};
+
+export type RoutingRule = {
+  id: string;
+  name: string;
+  enabled: boolean;
+  priority: number;
+  ruleType: string;
+  match: string;
+  protocol?: string;
+  action: string;
+  targetTag?: string;
+  description?: string;
+};
+
+export type LoadBalancerGroup = {
+  id: string;
+  name: string;
+  entryTag: string;
+  strategy: string;
+  members: Array<Record<string, unknown>>;
+  status: string;
+  lastDecision?: Record<string, unknown>;
+  healthCheckInterval: number;
+};
+
+export type WebhookEndpoint = {
+  id: string;
+  name: string;
+  kind: string;
+  url?: string;
+  chatId?: string;
+  enabled: boolean;
+  eventTypes?: string[];
+};
+
+export type AlertEvent = {
+  id: string;
+  severity: string;
+  sourceType: string;
+  sourceId: string;
+  eventType: string;
+  message: string;
+  delivered: boolean;
+  lastError?: string;
+  createdAt: string;
+};
+
+export type ExternalSubscription = {
+  id: string;
+  name: string;
+  url: string;
+  format: string;
+  enabled: boolean;
+  lastFetchedAt?: string;
+  lastError?: string;
+};
+
+export type ExternalNode = {
+  id: string;
+  subscriptionId: string;
+  name: string;
+  protocol: string;
+  address: string;
+  port: number;
+  source: string;
+  enabled: boolean;
+  latencyMs?: number;
+  lossPercent?: number;
+};
+
+export type ClashProfile = {
+  id: string;
+  name: string;
+  generatedYaml?: string;
+  updatedAt?: string;
+};
+
+export type Tenant = {
+  id: string;
+  name: string;
+  status: string;
+  role: string;
+  nodeAccess?: string[];
+  monthlyTrafficQuota?: number;
+  maxConnections?: number;
+};
+
+export type PanelUser = {
+  id: string;
+  tenantId?: string;
+  username: string;
+  role: string;
+  status: string;
+  nodeAccess?: string[];
+  monthlyTrafficQuota?: number;
+  maxConnections?: number;
+};
+
+export type APIKeyCreateResponse = {
+  item: {
+    id: string;
+    name: string;
+    status: string;
+    tenantId?: string;
+  };
+  apiKey: string;
+};
+
+export type CopilotIncident = {
+  id: string;
+  question: string;
+  answer: string;
+  model: string;
+  status: string;
+  createdAt: string;
+};
+
+export type ControlTask = {
+  id: string;
+  agentId: string;
+  type: string;
+  status: string;
+  attempts: number;
+  lastError?: string;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
+export type ControlPlaneDTO = {
+  nodes: ManagedNode[];
+  traffic: NodeTraffic[];
+  routingRules: RoutingRule[];
+  loadBalancers: LoadBalancerGroup[];
+  webhooks: WebhookEndpoint[];
+  alerts: AlertEvent[];
+  subscriptions: ExternalSubscription[];
+  externalNodes: ExternalNode[];
+  clashProfiles: ClashProfile[];
+  tenants: Tenant[];
+  users: PanelUser[];
+  copilotIncidents: CopilotIncident[];
+  tasks: ControlTask[];
+};
+
 export type DashboardDTO = {
   overview: OverviewDTO;
   agents: Agent[];
+  control: ControlPlaneDTO;
 };
 
 export function getStoredToken(): string {
@@ -73,14 +241,193 @@ export async function login(username: string, password: string): Promise<LoginRe
 }
 
 export async function loadDashboard(): Promise<DashboardDTO> {
-  const [overview, agents] = await Promise.all([
+  const [overview, agents, control] = await Promise.all([
     request<OverviewDTO>("/overview"),
-    request<ListResponse<BackendAgent>>("/agents")
+    request<ListResponse<BackendAgent>>("/agents"),
+    loadControlPlane()
   ]);
   return {
     overview,
-    agents: agents.items.map(toAgentView)
+    agents: agents.items.map(toAgentView),
+    control
   };
+}
+
+export async function loadControlPlane(): Promise<ControlPlaneDTO> {
+  const [
+    nodes,
+    traffic,
+    routingRules,
+    loadBalancers,
+    webhooks,
+    alerts,
+    subscriptions,
+    externalNodes,
+    clashProfiles,
+    tenants,
+    users,
+    copilotIncidents,
+    tasks
+  ] = await Promise.all([
+    request<ListResponse<ManagedNode>>("/nodes"),
+    request<ListResponse<NodeTraffic>>("/traffic/nodes"),
+    request<ListResponse<RoutingRule>>("/routing/rules"),
+    request<ListResponse<LoadBalancerGroup>>("/load-balancers"),
+    request<ListResponse<WebhookEndpoint>>("/webhooks"),
+    request<ListResponse<AlertEvent>>("/alerts"),
+    request<ListResponse<ExternalSubscription>>("/subscriptions"),
+    request<ListResponse<ExternalNode>>("/external-nodes"),
+    request<ListResponse<ClashProfile>>("/clash/profiles"),
+    request<ListResponse<Tenant>>("/tenants"),
+    request<ListResponse<PanelUser>>("/users"),
+    request<ListResponse<CopilotIncident>>("/copilot/incidents"),
+    request<ListResponse<ControlTask>>("/tasks")
+  ]);
+  return {
+    nodes: nodes.items,
+    traffic: traffic.items,
+    routingRules: routingRules.items,
+    loadBalancers: loadBalancers.items,
+    webhooks: webhooks.items,
+    alerts: alerts.items,
+    subscriptions: subscriptions.items,
+    externalNodes: externalNodes.items,
+    clashProfiles: clashProfiles.items,
+    tenants: tenants.items,
+    users: users.items,
+    copilotIncidents: copilotIncidents.items,
+    tasks: tasks.items
+  };
+}
+
+export async function optimizeAgent(agentId: string) {
+  return request<{ task: ControlTask }>(`/agents/${agentId}/network-optimization`, {
+    method: "POST",
+    body: JSON.stringify({ profile: "bbr-v3", allowKernelInstall: true, rebootPolicy: "manual", persist: true })
+  });
+}
+
+export async function createRoutingRule(input: Omit<RoutingRule, "id">) {
+  return request<RoutingRule>("/routing/rules", {
+    method: "POST",
+    body: JSON.stringify(input)
+  });
+}
+
+export async function applyRouting(agentIds: string[]) {
+  return request<{ count: number; tasks: ControlTask[] }>("/routing/apply", {
+    method: "POST",
+    body: JSON.stringify({ agentIds })
+  });
+}
+
+export async function createLoadBalancer(input: {
+  name: string;
+  entryTag: string;
+  strategy: string;
+  members: Array<Record<string, unknown>>;
+  healthCheckInterval: number;
+}) {
+  return request<LoadBalancerGroup>("/load-balancers", {
+    method: "POST",
+    body: JSON.stringify(input)
+  });
+}
+
+export async function createWebhook(input: {
+  name: string;
+  kind: string;
+  url: string;
+  secret?: string;
+  chatId?: string;
+  enabled: boolean;
+  eventTypes: string[];
+}) {
+  return request<WebhookEndpoint>("/webhooks", {
+    method: "POST",
+    body: JSON.stringify(input)
+  });
+}
+
+export async function createSubscription(input: {
+  name: string;
+  url?: string;
+  format?: string;
+  content?: string;
+  enabled: boolean;
+}) {
+  return request<ExternalSubscription>("/subscriptions", {
+    method: "POST",
+    body: JSON.stringify(input)
+  });
+}
+
+export async function importSubscription(id: string, content = "") {
+  return request<{ imported: number; items: ExternalNode[] }>(`/subscriptions/${id}/import`, {
+    method: "POST",
+    body: JSON.stringify({ content })
+  });
+}
+
+export async function createClashProfile(input: {
+  name: string;
+  ruleProviders: Array<Record<string, unknown>>;
+  proxyGroups: Array<Record<string, unknown>>;
+  routingRules: string[];
+}) {
+  return request<ClashProfile>("/clash/profiles", {
+    method: "POST",
+    body: JSON.stringify(input)
+  });
+}
+
+export async function createTenant(input: {
+  name: string;
+  status: string;
+  role: string;
+  nodeAccess: string[];
+  monthlyTrafficQuota: number;
+  maxConnections: number;
+}) {
+  return request<Tenant>("/tenants", {
+    method: "POST",
+    body: JSON.stringify(input)
+  });
+}
+
+export async function createPanelUser(input: {
+  tenantId: string;
+  username: string;
+  password: string;
+  role: string;
+  status: string;
+  nodeAccess: string[];
+  monthlyTrafficQuota: number;
+  maxConnections: number;
+}) {
+  return request<PanelUser>("/users", {
+    method: "POST",
+    body: JSON.stringify(input)
+  });
+}
+
+export async function createAPIKey(input: {
+  tenantId: string;
+  name: string;
+  scopes: string[];
+  status: string;
+}) {
+  return request<APIKeyCreateResponse>("/api-keys", {
+    method: "POST",
+    body: JSON.stringify(input)
+  });
+}
+
+export async function askCopilot(question: string) {
+  return request<CopilotIncident>("/copilot/ask", {
+    method: "POST",
+    body: JSON.stringify({ question })
+  });
 }
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {

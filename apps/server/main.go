@@ -16,6 +16,7 @@ func main() {
 		log.Fatalf("open database: %v", err)
 	}
 
+	ouserver.StartBackgroundJobs(cfg, db)
 	router := ouserver.NewRouter(cfg, db)
 
 	log.Printf("OU-UI server listening on %s", cfg.ListenAddr())

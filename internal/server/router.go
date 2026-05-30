@@ -46,6 +46,7 @@ func NewRouter(cfg config.ServerConfig, db *gorm.DB) *gin.Engine {
 	api.POST("/routing/rules", h.requirePanelAuth(), h.createRoutingRule)
 	api.PATCH("/routing/rules/:id", h.requirePanelAuth(), h.updateRoutingRule)
 	api.DELETE("/routing/rules/:id", h.requirePanelAuth(), h.deleteRoutingRule)
+	api.POST("/routing/apply", h.requirePanelAuth(), h.applyRouting)
 	api.GET("/routing/export/xray", h.requirePanelAuth(), h.exportXrayRouting)
 	api.GET("/load-balancers", h.requirePanelAuth(), h.listLoadBalancers)
 	api.POST("/load-balancers", h.requirePanelAuth(), h.createLoadBalancer)
@@ -88,6 +89,13 @@ func (h Handler) requirePanelAuth() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		token := bearerToken(c)
 		if h.authenticateAPIKey(c, token) {
+			if c.IsAborted() {
+				return
+			}
+			if !authorizePanelRequest(c) {
+				c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "api key scope does not allow this operation"})
+				return
+			}
 			c.Next()
 			return
 		}
@@ -102,6 +110,10 @@ func (h Handler) requirePanelAuth() gin.HandlerFunc {
 		c.Set("role", claims.Role)
 		c.Set("scopes", claims.Scopes)
 		c.Set("nodeAccess", claims.NodeAccess)
+		if !authorizePanelRequest(c) {
+			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "token scope does not allow this operation"})
+			return
+		}
 		c.Next()
 	}
 }
