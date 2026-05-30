@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -26,17 +27,25 @@ func TestParseExternalNodesShareURIs(t *testing.T) {
 		"id":   "00000000-0000-0000-0000-000000000001",
 	})
 	content := "vmess://" + base64.StdEncoding.EncodeToString(vmessBody) + "\n" +
-		"trojan://secret@sg.example.com:443?security=tls#Singapore%20Trojan\n"
+		"trojan://secret@sg.example.com:443?security=tls#Singapore%20Trojan\n" +
+		"ss://" + base64.RawURLEncoding.EncodeToString([]byte("aes-128-gcm:ss-pass")) + "@hk.example.com:8388#HK%20SS\n" +
+		"vless://00000000-0000-0000-0000-000000000003@us.example.com:443?security=reality&pbk=public-key&sid=01#US%20VLESS\n"
 
 	nodes := parseExternalNodes("sub_test", content)
-	if len(nodes) != 2 {
-		t.Fatalf("expected 2 nodes, got %d", len(nodes))
+	if len(nodes) != 4 {
+		t.Fatalf("expected 4 nodes, got %d", len(nodes))
 	}
 	if nodes[0].Name != "Tokyo VMess" || nodes[0].Protocol != "vmess" || nodes[0].Address != "jp.example.com" || nodes[0].Port != 443 {
 		t.Fatalf("unexpected vmess node: %+v", nodes[0])
 	}
 	if nodes[1].Name != "Singapore Trojan" || nodes[1].Protocol != "trojan" || nodes[1].Address != "sg.example.com" || nodes[1].Port != 443 {
 		t.Fatalf("unexpected trojan node: %+v", nodes[1])
+	}
+	if nodes[2].Name != "HK SS" || nodes[2].Protocol != "ss" || nodes[2].Address != "hk.example.com" || nodes[2].Port != 8388 {
+		t.Fatalf("unexpected shadowsocks node: %+v", nodes[2])
+	}
+	if nodes[3].Name != "US VLESS" || nodes[3].Protocol != "vless" || nodes[3].Address != "us.example.com" || nodes[3].Port != 443 {
+		t.Fatalf("unexpected vless node: %+v", nodes[3])
 	}
 }
 
@@ -60,6 +69,26 @@ proxies:
 	}
 	if nodes[1].Name != "US VLESS" || nodes[1].Protocol != "vless" || nodes[1].Address != "us.example.com" || nodes[1].Port != 443 {
 		t.Fatalf("unexpected second clash node: %+v", nodes[1])
+	}
+}
+
+func TestParseExternalNodesSingBoxJSON(t *testing.T) {
+	content := `{
+  "outbounds": [
+    {"type": "selector", "tag": "auto", "outbounds": ["HK SS"]},
+    {"type": "shadowsocks", "tag": "HK SS", "server": "hk.example.com", "server_port": 8388, "method": "aes-128-gcm", "password": "pass"},
+    {"type": "vless", "tag": "US Reality", "server": "us.example.com", "server_port": 443, "uuid": "00000000-0000-0000-0000-000000000004", "tls": {"enabled": true}}
+  ]
+}`
+	nodes := parseExternalNodes("sub_singbox", content)
+	if len(nodes) != 2 {
+		t.Fatalf("expected 2 sing-box nodes, got %d", len(nodes))
+	}
+	if nodes[0].Name != "HK SS" || nodes[0].Protocol != "shadowsocks" || nodes[0].Address != "hk.example.com" || nodes[0].Port != 8388 {
+		t.Fatalf("unexpected first sing-box node: %+v", nodes[0])
+	}
+	if nodes[1].Name != "US Reality" || nodes[1].Protocol != "vless" || nodes[1].Address != "us.example.com" || nodes[1].Port != 443 {
+		t.Fatalf("unexpected second sing-box node: %+v", nodes[1])
 	}
 }
 
@@ -95,6 +124,65 @@ func TestGenerateClashYAMLIsParseable(t *testing.T) {
 	}
 	if _, ok := out["rule-providers"].(map[string]any)["private"]; !ok {
 		t.Fatalf("expected private rule provider in %#v", out["rule-providers"])
+	}
+}
+
+func TestAggregateSubscriptionEndpointServesMultipleFormats(t *testing.T) {
+	db := openTestDB(t)
+	cfg := config.ServerConfig{
+		SecurePath:     "/ou-ui",
+		AdminUser:      "admin",
+		AdminPassword:  "password",
+		JWTSecret:      "test-secret",
+		AgentJoinToken: "join",
+	}
+	const rawKey = "ouak_subscription_read"
+	if err := db.Create(&models.APIKey{
+		ID:      "key_subscription_read",
+		Name:    "Subscription read",
+		KeyHash: hashSecret(rawKey),
+		Scopes:  datatypes.JSON(`["panel:read"]`),
+		Status:  "active",
+	}).Error; err != nil {
+		t.Fatalf("seed api key: %v", err)
+	}
+	if err := db.Create(&models.ExternalNode{
+		ID:       "ext_aggregate",
+		Name:     "HK SS",
+		Protocol: "shadowsocks",
+		Address:  "hk.example.com",
+		Port:     8388,
+		Config:   datatypes.JSON(`{"cipher":"aes-128-gcm","password":"pass"}`),
+		Enabled:  true,
+	}).Error; err != nil {
+		t.Fatalf("seed external node: %v", err)
+	}
+	router := NewRouter(cfg, db)
+
+	clashReq := httptest.NewRequest(http.MethodGet, "/ou-ui/api/v1/subscriptions/aggregate?format=clash", nil)
+	clashReq.Header.Set("Authorization", "Bearer "+rawKey)
+	clashResp := httptest.NewRecorder()
+	router.ServeHTTP(clashResp, clashReq)
+	if clashResp.Code != http.StatusOK || !strings.Contains(clashResp.Body.String(), "proxy-groups:") {
+		t.Fatalf("expected clash aggregate yaml, got %d: %s", clashResp.Code, clashResp.Body.String())
+	}
+
+	v2rayReq := httptest.NewRequest(http.MethodGet, "/ou-ui/api/v1/subscriptions/aggregate?format=v2ray", nil)
+	v2rayReq.Header.Set("Authorization", "Bearer "+rawKey)
+	v2rayResp := httptest.NewRecorder()
+	router.ServeHTTP(v2rayResp, v2rayReq)
+	decoded, err := base64.StdEncoding.DecodeString(strings.TrimSpace(v2rayResp.Body.String()))
+	if v2rayResp.Code != http.StatusOK || err != nil || !strings.Contains(string(decoded), "ss://") {
+		t.Fatalf("expected v2ray aggregate shares, got code=%d err=%v body=%s", v2rayResp.Code, err, v2rayResp.Body.String())
+	}
+
+	singBoxReq := httptest.NewRequest(http.MethodGet, "/ou-ui/api/v1/subscriptions/aggregate?format=sing-box", nil)
+	singBoxReq.Header.Set("Authorization", "Bearer "+rawKey)
+	singBoxResp := httptest.NewRecorder()
+	router.ServeHTTP(singBoxResp, singBoxReq)
+	var singBox map[string]any
+	if singBoxResp.Code != http.StatusOK || json.Unmarshal(singBoxResp.Body.Bytes(), &singBox) != nil || singBox["outbounds"] == nil {
+		t.Fatalf("expected sing-box aggregate json, got %d: %s", singBoxResp.Code, singBoxResp.Body.String())
 	}
 }
 

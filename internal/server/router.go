@@ -61,6 +61,7 @@ func NewRouter(cfg config.ServerConfig, db *gorm.DB) *gin.Engine {
 	api.GET("/subscriptions", h.requirePanelAuth(), h.listSubscriptions)
 	api.POST("/subscriptions", h.requirePanelAuth(), h.createSubscription)
 	api.POST("/subscriptions/:id/import", h.requirePanelAuth(), h.importSubscription)
+	api.GET("/subscriptions/aggregate", h.requirePanelAuth(), h.getAggregateSubscription)
 	api.GET("/external-nodes", h.requirePanelAuth(), h.listExternalNodes)
 	api.GET("/clash/profiles", h.requirePanelAuth(), h.listClashProfiles)
 	api.POST("/clash/profiles", h.requirePanelAuth(), h.createClashProfile)

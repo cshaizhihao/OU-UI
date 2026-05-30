@@ -9,6 +9,7 @@ import {
   type Agent
 } from "../data";
 import {
+  aggregateSubscriptionURL,
   applyRouting,
   askCopilot,
   createAPIKey,
@@ -20,9 +21,11 @@ import {
   createTenant,
   createWebhook,
   importSubscription,
+  loadAggregateSubscription,
   optimizeAgent,
   testWebhook,
   type AlertEvent,
+  type AggregateSubscriptionFormat,
   type ClashProfile,
   type ControlTask,
   type DashboardDTO,
@@ -447,6 +450,8 @@ function V3ControlCenter({
     url: "",
     content: ""
   });
+  const [aggregateFormat, setAggregateFormat] = useState<AggregateSubscriptionFormat>("clash");
+  const [aggregateContent, setAggregateContent] = useState("");
   const [clash, setClash] = useState({
     name: "OU-UI Managed Clash",
     providerUrl: "https://example.com/rules/private.yaml"
@@ -581,6 +586,14 @@ function V3ControlCenter({
       return;
     }
     void runAction("Subscription import", () => importSubscription(sub.id));
+  }
+
+  function handleLoadAggregateSubscription() {
+    void runAction("Aggregate subscription", async () => {
+      const content = await loadAggregateSubscription(aggregateFormat);
+      setAggregateContent(content);
+      return content;
+    });
   }
 
   function handleCreateClash(event: FormEvent) {
@@ -851,6 +864,25 @@ function V3ControlCenter({
             columns={["Node", "Protocol", "Endpoint"]}
             rows={(control?.externalNodes ?? []).slice(0, 6).map((node) => [node.name, node.protocol, `${node.address}:${node.port}`])}
           />
+          <div className="aggregate-box">
+            <div className="button-row">
+              <select
+                aria-label="Aggregate subscription format"
+                value={aggregateFormat}
+                onChange={(event) => setAggregateFormat(event.target.value as AggregateSubscriptionFormat)}
+              >
+                <option value="clash">Clash YAML</option>
+                <option value="v2ray">V2Ray Base64</option>
+                <option value="raw">Raw shares</option>
+                <option value="sing-box">Sing-box JSON</option>
+              </select>
+              <button className="ghost-button" disabled={Boolean(busy) || controlsDisabled} onClick={handleLoadAggregateSubscription} type="button">
+                Generate aggregate
+              </button>
+            </div>
+            <code>{aggregateSubscriptionURL(aggregateFormat)}</code>
+            {aggregateContent ? <textarea readOnly value={aggregateContent} /> : null}
+          </div>
         </section>
       </div>
 

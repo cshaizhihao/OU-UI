@@ -146,6 +146,8 @@ export type ClashProfile = {
   updatedAt?: string;
 };
 
+export type AggregateSubscriptionFormat = "clash" | "v2ray" | "raw" | "sing-box";
+
 export type Tenant = {
   id: string;
   name: string;
@@ -385,6 +387,27 @@ export async function createClashProfile(input: {
     method: "POST",
     body: JSON.stringify(input)
   });
+}
+
+export function aggregateSubscriptionURL(format: AggregateSubscriptionFormat = "clash"): string {
+  return `${apiBase()}/subscriptions/aggregate?format=${encodeURIComponent(format)}`;
+}
+
+export async function loadAggregateSubscription(format: AggregateSubscriptionFormat = "clash"): Promise<string> {
+  const headers = new Headers();
+  const token = getStoredToken();
+  if (token) {
+    headers.set("Authorization", `Bearer ${token}`);
+  }
+  const res = await fetch(aggregateSubscriptionURL(format), { headers });
+  if (res.status === 401) {
+    clearStoredToken();
+  }
+  if (!res.ok) {
+    const message = await readError(res);
+    throw new Error(message || `API request failed with ${res.status}`);
+  }
+  return res.text();
 }
 
 export async function createTenant(input: {

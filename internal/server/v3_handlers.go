@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"sort"
@@ -1354,6 +1355,39 @@ func (h Handler) listExternalNodes(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"items": nodes})
 }
 
+func (h Handler) getAggregateSubscription(c *gin.Context) {
+	format := strings.ToLower(strings.TrimSpace(c.Query("format")))
+	if format == "" {
+		format = "clash"
+	}
+	switch format {
+	case "clash", "yaml", "yml":
+		c.Header("Content-Type", "text/yaml; charset=utf-8")
+		c.Header("Content-Disposition", `inline; filename="ou-ui-aggregate.yaml"`)
+		c.String(http.StatusOK, h.generateClashYAML(clashProfileRequest{Name: "OU-UI Aggregate"}))
+	case "v2ray", "v2rayn", "share", "base64":
+		content := h.generateV2RaySubscription()
+		c.Header("Content-Type", "text/plain; charset=utf-8")
+		c.Header("Content-Disposition", `inline; filename="ou-ui-aggregate.txt"`)
+		c.String(http.StatusOK, base64.StdEncoding.EncodeToString([]byte(content)))
+	case "raw":
+		c.Header("Content-Type", "text/plain; charset=utf-8")
+		c.Header("Content-Disposition", `inline; filename="ou-ui-aggregate-raw.txt"`)
+		c.String(http.StatusOK, h.generateV2RaySubscription())
+	case "sing-box", "singbox", "json":
+		content, err := json.MarshalIndent(h.generateSingBoxConfig(), "", "  ")
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "generate sing-box config failed"})
+			return
+		}
+		c.Header("Content-Type", "application/json; charset=utf-8")
+		c.Header("Content-Disposition", `inline; filename="ou-ui-aggregate-sing-box.json"`)
+		c.String(http.StatusOK, string(content))
+	default:
+		c.JSON(http.StatusBadRequest, gin.H{"error": "unsupported aggregate format"})
+	}
+}
+
 type clashProfileRequest struct {
 	Name          string           `json:"name"`
 	RuleProviders []map[string]any `json:"ruleProviders"`
@@ -1513,6 +1547,205 @@ func (h Handler) clashProxies() []map[string]any {
 	return proxies
 }
 
+func (h Handler) generateV2RaySubscription() string {
+	proxies := h.clashProxies()
+	lines := make([]string, 0, len(proxies))
+	for _, proxy := range proxies {
+		if share := proxyShareURI(proxy); share != "" {
+			lines = append(lines, share)
+		}
+	}
+	return strings.Join(lines, "\n")
+}
+
+func (h Handler) generateSingBoxConfig() map[string]any {
+	proxies := h.clashProxies()
+	outbounds := []map[string]any{
+		{"type": "selector", "tag": "OU-Auto", "outbounds": proxyNamesForSingBox(proxies)},
+		{"type": "urltest", "tag": "OU-URLTest", "outbounds": proxyNamesForSingBox(proxies), "url": "https://www.gstatic.com/generate_204", "interval": "5m"},
+	}
+	for _, proxy := range proxies {
+		if outbound := singBoxOutboundFromProxy(proxy); len(outbound) > 0 {
+			outbounds = append(outbounds, outbound)
+		}
+	}
+	outbounds = append(outbounds, map[string]any{"type": "direct", "tag": "DIRECT"})
+	return map[string]any{
+		"log": gin.H{"level": "warn"},
+		"inbounds": []map[string]any{
+			{"type": "mixed", "tag": "mixed-in", "listen": "127.0.0.1", "listen_port": 7890},
+		},
+		"outbounds": outbounds,
+		"route":     gin.H{"final": "OU-Auto"},
+	}
+}
+
+func proxyNamesForSingBox(proxies []map[string]any) []string {
+	names := make([]string, 0, len(proxies)+1)
+	for _, proxy := range proxies {
+		if name := proxyString(proxy, "name"); name != "" {
+			names = append(names, name)
+		}
+	}
+	if len(names) == 0 {
+		names = append(names, "DIRECT")
+	}
+	return names
+}
+
+func singBoxOutboundFromProxy(proxy map[string]any) map[string]any {
+	name := proxyString(proxy, "name")
+	server := proxyString(proxy, "server")
+	port := proxyPort(proxy)
+	if name == "" || server == "" || port <= 0 {
+		return nil
+	}
+	outbound := map[string]any{
+		"tag":         name,
+		"server":      server,
+		"server_port": port,
+	}
+	switch clashType(proxyString(proxy, "type")) {
+	case "ss":
+		outbound["type"] = "shadowsocks"
+		outbound["method"] = proxyString(proxy, "cipher", "method")
+		outbound["password"] = proxyString(proxy, "password")
+	case "vmess":
+		outbound["type"] = "vmess"
+		outbound["uuid"] = proxyString(proxy, "uuid", "id")
+		outbound["security"] = defaultNonEmpty(proxyString(proxy, "security", "cipher"), "auto")
+		if alterID := intFromAny(firstProxyValue(proxy, "alterId", "alter-id", "alter_id", "aid")); alterID > 0 {
+			outbound["alter_id"] = alterID
+		}
+	case "vless":
+		outbound["type"] = "vless"
+		outbound["uuid"] = proxyString(proxy, "uuid", "id")
+		if flow := proxyString(proxy, "flow"); flow != "" {
+			outbound["flow"] = flow
+		}
+		addSingBoxTLS(outbound, proxy)
+	case "trojan":
+		outbound["type"] = "trojan"
+		outbound["password"] = proxyString(proxy, "password")
+		addSingBoxTLS(outbound, proxy)
+	case "hysteria2":
+		outbound["type"] = "hysteria2"
+		outbound["password"] = proxyString(proxy, "password", "auth")
+		addSingBoxTLS(outbound, proxy)
+	default:
+		return nil
+	}
+	return outbound
+}
+
+func addSingBoxTLS(outbound, proxy map[string]any) {
+	security := strings.ToLower(proxyString(proxy, "security"))
+	tlsEnabled := security == "tls" || security == "reality" || boolValue(firstProxyValue(proxy, "tls"))
+	if !tlsEnabled {
+		return
+	}
+	tlsConfig := map[string]any{"enabled": true}
+	if serverName := proxyString(proxy, "sni", "servername", "server_name"); serverName != "" {
+		tlsConfig["server_name"] = serverName
+	}
+	if boolValue(firstProxyValue(proxy, "skip-cert-verify", "skip_cert_verify", "allowInsecure")) {
+		tlsConfig["insecure"] = true
+	}
+	if security == "reality" || proxyString(proxy, "pbk", "public-key", "public_key") != "" {
+		reality := map[string]any{"enabled": true}
+		if publicKey := proxyString(proxy, "pbk", "public-key", "public_key"); publicKey != "" {
+			reality["public_key"] = publicKey
+		}
+		if shortID := proxyString(proxy, "sid", "short-id", "short_id"); shortID != "" {
+			reality["short_id"] = shortID
+		}
+		tlsConfig["reality"] = reality
+	}
+	outbound["tls"] = tlsConfig
+}
+
+func proxyShareURI(proxy map[string]any) string {
+	name := proxyString(proxy, "name")
+	server := proxyString(proxy, "server")
+	port := proxyPort(proxy)
+	if name == "" || server == "" || port <= 0 {
+		return ""
+	}
+	fragment := url.QueryEscape(name)
+	switch clashType(proxyString(proxy, "type")) {
+	case "ss":
+		method := proxyString(proxy, "cipher", "method")
+		password := proxyString(proxy, "password")
+		if method == "" || password == "" {
+			return ""
+		}
+		user := base64.RawURLEncoding.EncodeToString([]byte(method + ":" + password))
+		return fmt.Sprintf("ss://%s@%s#%s", user, net.JoinHostPort(server, strconv.Itoa(port)), fragment)
+	case "trojan":
+		password := proxyString(proxy, "password")
+		if password == "" {
+			return ""
+		}
+		return shareWithUserInfo("trojan", password, server, port, shareQuery(proxy, "sni", "alpn", "network", "ws-opts", "grpc-opts", "skip-cert-verify"), fragment)
+	case "vless":
+		uuid := proxyString(proxy, "uuid", "id")
+		if uuid == "" {
+			return ""
+		}
+		query := shareQuery(proxy, "encryption", "flow", "security", "sni", "fp", "pbk", "sid", "type", "host", "path", "serviceName")
+		if query.Get("encryption") == "" {
+			query.Set("encryption", "none")
+		}
+		return shareWithUserInfo("vless", uuid, server, port, query, fragment)
+	case "vmess":
+		body := map[string]any{
+			"v":    "2",
+			"ps":   name,
+			"add":  server,
+			"port": strconv.Itoa(port),
+			"id":   proxyString(proxy, "uuid", "id"),
+			"aid":  strconv.Itoa(intFromAny(firstProxyValue(proxy, "alterId", "alter-id", "alter_id", "aid"))),
+			"net":  defaultNonEmpty(proxyString(proxy, "network", "type"), "tcp"),
+			"type": "none",
+			"host": proxyString(proxy, "host"),
+			"path": proxyString(proxy, "path"),
+			"tls":  proxyString(proxy, "tls", "security"),
+			"sni":  proxyString(proxy, "sni", "servername"),
+		}
+		content, _ := json.Marshal(body)
+		return "vmess://" + base64.StdEncoding.EncodeToString(content)
+	case "hysteria2":
+		password := proxyString(proxy, "password", "auth")
+		if password == "" {
+			return ""
+		}
+		return shareWithUserInfo("hysteria2", password, server, port, shareQuery(proxy, "sni", "obfs", "obfs-password", "insecure"), fragment)
+	default:
+		return ""
+	}
+}
+
+func shareWithUserInfo(scheme, userInfo, server string, port int, query url.Values, fragment string) string {
+	raw := fmt.Sprintf("%s://%s@%s", scheme, url.QueryEscape(userInfo), net.JoinHostPort(server, strconv.Itoa(port)))
+	if encoded := query.Encode(); encoded != "" {
+		raw += "?" + encoded
+	}
+	if fragment != "" {
+		raw += "#" + fragment
+	}
+	return raw
+}
+
+func shareQuery(proxy map[string]any, keys ...string) url.Values {
+	query := url.Values{}
+	for _, key := range keys {
+		if value := proxyString(proxy, key); value != "" {
+			query.Set(key, value)
+		}
+	}
+	return query
+}
+
 func (h Handler) listTenants(c *gin.Context) {
 	var tenants []models.Tenant
 	if err := h.db.Order("updated_at desc").Find(&tenants).Error; err != nil {
@@ -1649,6 +1882,7 @@ func (h Handler) apiDocs(c *gin.Context) {
 			"/webhooks/{id}/test":               gin.H{"post": gin.H{"summary": "Send test alert through a webhook"}},
 			"/alerts":                           gin.H{"get": gin.H{"summary": "List alert events and delivery status"}},
 			"/subscriptions":                    gin.H{"get": gin.H{"summary": "List external subscriptions"}, "post": gin.H{"summary": "Create external subscription"}},
+			"/subscriptions/aggregate":          gin.H{"get": gin.H{"summary": "Generate aggregated Clash, V2Ray, raw share, or Sing-box subscriptions"}},
 			"/clash/profiles":                   gin.H{"get": gin.H{"summary": "List Clash profiles"}, "post": gin.H{"summary": "Create Clash profile"}},
 			"/tenants":                          gin.H{"get": gin.H{"summary": "List tenants"}, "post": gin.H{"summary": "Create tenant"}},
 			"/users":                            gin.H{"get": gin.H{"summary": "List panel users"}, "post": gin.H{"summary": "Create panel user"}},
@@ -1791,6 +2025,10 @@ func parseExternalNodes(subscriptionID, content string) []models.ExternalNode {
 	if len(nodes) > 0 {
 		return nodes
 	}
+	nodes = parseSingBoxJSONNodes(subscriptionID, content)
+	if len(nodes) > 0 {
+		return nodes
+	}
 	lines := strings.Split(content, "\n")
 	for index, line := range lines {
 		line = strings.TrimSpace(line)
@@ -1830,6 +2068,50 @@ func parseClashYAMLNodes(subscriptionID, content string) []models.ExternalNode {
 	return nodes
 }
 
+func parseSingBoxJSONNodes(subscriptionID, content string) []models.ExternalNode {
+	var doc struct {
+		Outbounds []map[string]any `json:"outbounds"`
+	}
+	decoder := json.NewDecoder(strings.NewReader(content))
+	decoder.UseNumber()
+	if err := decoder.Decode(&doc); err != nil || len(doc.Outbounds) == 0 {
+		return nil
+	}
+	nodes := make([]models.ExternalNode, 0, len(doc.Outbounds))
+	for index, outbound := range doc.Outbounds {
+		node, ok := externalNodeFromSingBoxOutbound(subscriptionID, outbound, index)
+		if ok {
+			nodes = append(nodes, node)
+		}
+	}
+	return nodes
+}
+
+func externalNodeFromSingBoxOutbound(subscriptionID string, outbound map[string]any, index int) (models.ExternalNode, bool) {
+	protocol := strings.ToLower(strings.TrimSpace(fmt.Sprint(outbound["type"])))
+	if !isProxyProtocol(protocol) {
+		return models.ExternalNode{}, false
+	}
+	host := strings.TrimSpace(fmt.Sprint(outbound["server"]))
+	port := intFromAny(firstProxyValue(outbound, "server_port", "serverPort", "port"))
+	name := strings.TrimSpace(fmt.Sprint(outbound["tag"]))
+	if name == "" {
+		name = defaultNonEmpty(protocol, "proxy") + "-" + strconv.Itoa(index+1)
+	}
+	raw, _ := json.Marshal(outbound)
+	return models.ExternalNode{
+		ID:             stableExternalNodeID(subscriptionID, string(raw)),
+		SubscriptionID: subscriptionID,
+		Name:           name,
+		Protocol:       protocol,
+		Address:        host,
+		Port:           port,
+		Source:         "sing-box",
+		Config:         mustJSON(outbound),
+		Enabled:        true,
+	}, host != "" && port > 0
+}
+
 func externalNodeFromProxyMap(subscriptionID string, config map[string]any, index int) (models.ExternalNode, bool) {
 	name := strings.TrimSpace(fmt.Sprint(config["name"]))
 	protocol := strings.TrimSpace(fmt.Sprint(config["type"]))
@@ -1861,6 +2143,9 @@ func parseShareURI(subscriptionID, raw string, index int) (models.ExternalNode, 
 	if protocol == "vmess" {
 		return parseVMess(subscriptionID, raw, index)
 	}
+	if protocol == "ss" || protocol == "shadowsocks" {
+		return parseShadowsocks(subscriptionID, raw, index)
+	}
 	name, _ := url.QueryUnescape(parsed.Fragment)
 	if name == "" {
 		name = protocol + "-" + strconv.Itoa(index+1)
@@ -1869,12 +2154,24 @@ func parseShareURI(subscriptionID, raw string, index int) (models.ExternalNode, 
 	port, _ := strconv.Atoi(parsed.Port())
 	config := map[string]any{"raw": raw}
 	if parsed.User != nil {
-		if password, ok := parsed.User.Password(); ok {
-			config["password"] = password
-		}
-		if username := parsed.User.Username(); username != "" {
-			config["uuid"] = username
-			config["password"] = username
+		username, _ := url.QueryUnescape(parsed.User.Username())
+		password, hasPassword := parsed.User.Password()
+		password, _ = url.QueryUnescape(password)
+		switch protocol {
+		case "trojan", "hysteria2", "hy2":
+			if username != "" {
+				config["password"] = username
+			}
+			if hasPassword && password != "" {
+				config["password"] = password
+			}
+		default:
+			if username != "" {
+				config["uuid"] = username
+			}
+			if hasPassword && password != "" {
+				config["password"] = password
+			}
 		}
 	}
 	for key, values := range parsed.Query() {
@@ -1895,6 +2192,71 @@ func parseShareURI(subscriptionID, raw string, index int) (models.ExternalNode, 
 	}, host != "" && port > 0
 }
 
+func parseShadowsocks(subscriptionID, raw string, index int) (models.ExternalNode, bool) {
+	parsed, err := url.Parse(raw)
+	if err != nil {
+		return models.ExternalNode{}, false
+	}
+	name, _ := url.QueryUnescape(parsed.Fragment)
+	if name == "" {
+		name = "ss-" + strconv.Itoa(index+1)
+	}
+	config := map[string]any{"raw": raw}
+	for key, values := range parsed.Query() {
+		if len(values) > 0 {
+			config[key] = values[0]
+		}
+	}
+	host := parsed.Hostname()
+	port, _ := strconv.Atoi(parsed.Port())
+	method := ""
+	password := ""
+	if parsed.User != nil {
+		username, _ := url.QueryUnescape(parsed.User.Username())
+		if parsedPassword, ok := parsed.User.Password(); ok {
+			method = username
+			password, _ = url.QueryUnescape(parsedPassword)
+		} else {
+			method, password = splitShadowsocksUserInfo(decodeMaybeBase64(username))
+		}
+	}
+	if host == "" || port == 0 {
+		encoded := parsed.Host
+		if encoded == "" {
+			encoded = strings.TrimPrefix(raw, "ss://")
+			encoded = strings.SplitN(encoded, "#", 2)[0]
+			encoded = strings.SplitN(encoded, "?", 2)[0]
+		}
+		decoded := decodeMaybeBase64(encoded)
+		decoded = strings.SplitN(decoded, "#", 2)[0]
+		decoded = strings.SplitN(decoded, "?", 2)[0]
+		if methodFromAll, passwordFromAll, hostFromAll, portFromAll, ok := splitShadowsocksAuthority(decoded); ok {
+			method = methodFromAll
+			password = passwordFromAll
+			host = hostFromAll
+			port = portFromAll
+		}
+	}
+	if method != "" {
+		config["cipher"] = method
+		config["method"] = method
+	}
+	if password != "" {
+		config["password"] = password
+	}
+	return models.ExternalNode{
+		ID:             stableExternalNodeID(subscriptionID, raw),
+		SubscriptionID: subscriptionID,
+		Name:           name,
+		Protocol:       "ss",
+		Address:        host,
+		Port:           port,
+		Source:         "subscription",
+		Config:         mustJSON(config),
+		Enabled:        true,
+	}, host != "" && port > 0 && method != "" && password != ""
+}
+
 func parseVMess(subscriptionID, raw string, index int) (models.ExternalNode, bool) {
 	encoded := strings.TrimPrefix(raw, "vmess://")
 	decoded := decodeMaybeBase64(encoded)
@@ -1902,6 +2264,7 @@ func parseVMess(subscriptionID, raw string, index int) (models.ExternalNode, boo
 	if err := json.Unmarshal([]byte(decoded), &body); err != nil {
 		return models.ExternalNode{}, false
 	}
+	body["raw"] = raw
 	name := strings.TrimSpace(fmt.Sprint(body["ps"]))
 	if name == "" {
 		name = "vmess-" + strconv.Itoa(index+1)
@@ -1955,7 +2318,52 @@ func parseClashInlineProxy(subscriptionID, line string, index int) (models.Exter
 	}, protocol != "" && host != "" && port > 0
 }
 
+func isProxyProtocol(protocol string) bool {
+	switch clashType(protocol) {
+	case "ss", "vmess", "vless", "trojan", "hysteria2":
+		return true
+	default:
+		return false
+	}
+}
+
+func splitShadowsocksUserInfo(value string) (string, string) {
+	parts := strings.SplitN(value, ":", 2)
+	if len(parts) != 2 {
+		return "", ""
+	}
+	return strings.TrimSpace(parts[0]), strings.TrimSpace(parts[1])
+}
+
+func splitShadowsocksAuthority(value string) (method, password, host string, port int, ok bool) {
+	userInfo, endpoint, found := strings.Cut(value, "@")
+	if !found {
+		return "", "", "", 0, false
+	}
+	method, password = splitShadowsocksUserInfo(userInfo)
+	if method == "" || password == "" {
+		return "", "", "", 0, false
+	}
+	host, portText, err := net.SplitHostPort(endpoint)
+	if err != nil {
+		parts := strings.Split(endpoint, ":")
+		if len(parts) < 2 {
+			return "", "", "", 0, false
+		}
+		host = strings.Join(parts[:len(parts)-1], ":")
+		portText = parts[len(parts)-1]
+	}
+	port, err = strconv.Atoi(strings.TrimSpace(portText))
+	if err != nil {
+		return "", "", "", 0, false
+	}
+	return method, password, strings.Trim(host, "[]"), port, true
+}
+
 func fetchText(rawURL string) (string, error) {
+	if err := validateSubscriptionURL(rawURL); err != nil {
+		return "", err
+	}
 	req, err := http.NewRequest(http.MethodGet, rawURL, nil)
 	if err != nil {
 		return "", err
@@ -1974,6 +2382,33 @@ func fetchText(rawURL string) (string, error) {
 		return "", err
 	}
 	return string(content), nil
+}
+
+func validateSubscriptionURL(rawURL string) error {
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return err
+	}
+	switch strings.ToLower(parsed.Scheme) {
+	case "http", "https":
+	default:
+		return fmt.Errorf("subscription url must use http or https")
+	}
+	host := strings.TrimSpace(parsed.Hostname())
+	if host == "" {
+		return fmt.Errorf("subscription url host is required")
+	}
+	if strings.EqualFold(host, "localhost") || strings.HasSuffix(strings.ToLower(host), ".localhost") {
+		return fmt.Errorf("subscription url points to a local host")
+	}
+	if ip := net.ParseIP(host); ip != nil && !isPublicRoutableIP(ip) {
+		return fmt.Errorf("subscription url points to a private address")
+	}
+	return nil
+}
+
+func isPublicRoutableIP(ip net.IP) bool {
+	return !(ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsUnspecified())
 }
 
 func postJSON(client *http.Client, endpoint string, payload map[string]any, secret string) error {
@@ -2358,4 +2793,59 @@ func firstMapString(values map[string]any, keys ...string) string {
 		}
 	}
 	return ""
+}
+
+func firstProxyValue(values map[string]any, keys ...string) any {
+	for _, key := range keys {
+		if value, ok := values[key]; ok {
+			return value
+		}
+	}
+	return nil
+}
+
+func proxyString(values map[string]any, keys ...string) string {
+	for _, key := range keys {
+		if value, ok := values[key]; ok {
+			switch typed := value.(type) {
+			case string:
+				if text := strings.TrimSpace(typed); text != "" {
+					return text
+				}
+			case fmt.Stringer:
+				if text := strings.TrimSpace(typed.String()); text != "" {
+					return text
+				}
+			case bool:
+				return strconv.FormatBool(typed)
+			default:
+				if value != nil {
+					if text := strings.TrimSpace(fmt.Sprint(value)); text != "" && text != "<nil>" {
+						return text
+					}
+				}
+			}
+		}
+	}
+	return ""
+}
+
+func proxyPort(values map[string]any) int {
+	return intFromAny(firstProxyValue(values, "port", "server_port", "serverPort"))
+}
+
+func boolValue(value any) bool {
+	switch typed := value.(type) {
+	case bool:
+		return typed
+	case string:
+		out, _ := strconv.ParseBool(strings.TrimSpace(typed))
+		return out
+	case int:
+		return typed != 0
+	case float64:
+		return typed != 0
+	default:
+		return false
+	}
 }
