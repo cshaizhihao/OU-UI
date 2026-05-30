@@ -1893,6 +1893,16 @@ type tenantRequest struct {
 	MaxConnections      int      `json:"maxConnections"`
 }
 
+type tenantPatchRequest struct {
+	Name                *string  `json:"name"`
+	Status              *string  `json:"status"`
+	Role                *string  `json:"role"`
+	NodeAccess          []string `json:"nodeAccess"`
+	MonthlyTrafficQuota *uint64  `json:"monthlyTrafficQuota"`
+	PerNodeTrafficQuota *uint64  `json:"perNodeTrafficQuota"`
+	MaxConnections      *int     `json:"maxConnections"`
+}
+
 func (h Handler) createTenant(c *gin.Context) {
 	var req tenantRequest
 	if err := c.ShouldBindJSON(&req); err != nil || strings.TrimSpace(req.Name) == "" {
@@ -1914,6 +1924,46 @@ func (h Handler) createTenant(c *gin.Context) {
 		return
 	}
 	h.audit("panel", "tenant.create", tenant.ID, tenant.Name)
+	c.JSON(http.StatusOK, tenant)
+}
+
+func (h Handler) updateTenant(c *gin.Context) {
+	var tenant models.Tenant
+	if err := h.db.First(&tenant, "id = ?", c.Param("id")).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "tenant not found"})
+		return
+	}
+	var req tenantPatchRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request"})
+		return
+	}
+	if req.Name != nil && strings.TrimSpace(*req.Name) != "" {
+		tenant.Name = strings.TrimSpace(*req.Name)
+	}
+	if req.Status != nil {
+		tenant.Status = normalizeRBACStatus(*req.Status)
+	}
+	if req.Role != nil {
+		tenant.Role = normalizeRBACRole(*req.Role)
+	}
+	if req.NodeAccess != nil {
+		tenant.NodeAccess = mustJSON(compactStringList(req.NodeAccess))
+	}
+	if req.MonthlyTrafficQuota != nil {
+		tenant.MonthlyTrafficQuota = *req.MonthlyTrafficQuota
+	}
+	if req.PerNodeTrafficQuota != nil {
+		tenant.PerNodeTrafficQuota = *req.PerNodeTrafficQuota
+	}
+	if req.MaxConnections != nil {
+		tenant.MaxConnections = *req.MaxConnections
+	}
+	if err := h.db.Save(&tenant).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "update tenant failed"})
+		return
+	}
+	h.audit("panel", "tenant.update", tenant.ID, tenant.Name)
 	c.JSON(http.StatusOK, tenant)
 }
 
@@ -1941,6 +1991,18 @@ type panelUserRequest struct {
 	MonthlyTrafficQuota uint64   `json:"monthlyTrafficQuota"`
 	PerNodeTrafficQuota uint64   `json:"perNodeTrafficQuota"`
 	MaxConnections      int      `json:"maxConnections"`
+}
+
+type panelUserPatchRequest struct {
+	TenantID            *string  `json:"tenantId"`
+	Username            *string  `json:"username"`
+	Password            *string  `json:"password"`
+	Role                *string  `json:"role"`
+	Status              *string  `json:"status"`
+	NodeAccess          []string `json:"nodeAccess"`
+	MonthlyTrafficQuota *uint64  `json:"monthlyTrafficQuota"`
+	PerNodeTrafficQuota *uint64  `json:"perNodeTrafficQuota"`
+	MaxConnections      *int     `json:"maxConnections"`
 }
 
 func (h Handler) createPanelUser(c *gin.Context) {
@@ -1975,6 +2037,78 @@ func (h Handler) createPanelUser(c *gin.Context) {
 	}
 	h.audit("panel", "user.create", user.ID, user.Username)
 	c.JSON(http.StatusOK, user)
+}
+
+func (h Handler) updatePanelUser(c *gin.Context) {
+	var user models.PanelUser
+	if err := h.db.First(&user, "id = ?", c.Param("id")).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "user not found"})
+		return
+	}
+	var req panelUserPatchRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request"})
+		return
+	}
+	if req.TenantID != nil {
+		tenantID := strings.TrimSpace(*req.TenantID)
+		if tenantID != "" {
+			var tenant models.Tenant
+			if err := h.db.Select("id").Where("id = ? AND status = ?", tenantID, "active").First(&tenant).Error; err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "tenant is not active"})
+				return
+			}
+		}
+		user.TenantID = tenantID
+	}
+	if req.Username != nil && strings.TrimSpace(*req.Username) != "" {
+		user.Username = strings.TrimSpace(*req.Username)
+	}
+	if req.Password != nil && *req.Password != "" {
+		user.PasswordSHA = hashSecret(*req.Password)
+	}
+	if req.Role != nil {
+		user.Role = normalizeRBACRole(*req.Role)
+	}
+	if req.Status != nil {
+		user.Status = normalizeRBACStatus(*req.Status)
+	}
+	if req.NodeAccess != nil {
+		user.NodeAccess = mustJSON(compactStringList(req.NodeAccess))
+	}
+	if req.MonthlyTrafficQuota != nil {
+		user.MonthlyTrafficQuota = *req.MonthlyTrafficQuota
+	}
+	if req.PerNodeTrafficQuota != nil {
+		user.PerNodeTrafficQuota = *req.PerNodeTrafficQuota
+	}
+	if req.MaxConnections != nil {
+		user.MaxConnections = *req.MaxConnections
+	}
+	if err := h.db.Save(&user).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "update user failed"})
+		return
+	}
+	h.audit("panel", "user.update", user.ID, user.Username)
+	c.JSON(http.StatusOK, user)
+}
+
+func normalizeRBACRole(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "owner":
+		return "owner"
+	default:
+		return "operator"
+	}
+}
+
+func normalizeRBACStatus(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "paused", "disabled", "inactive":
+		return "paused"
+	default:
+		return "active"
+	}
 }
 
 type apiKeyRequest struct {
@@ -2091,7 +2225,9 @@ func openAPIPaths() gin.H {
 		"/clash/profiles":                   gin.H{"get": apiOperation("Clash", "List Clash profiles", "panel:read", nil), "post": apiOperation("Clash", "Create hosted Clash YAML profile", "panel:write", gin.H{"name": "OU-UI Clash", "ruleProviders": []gin.H{}, "proxyGroups": []gin.H{}, "selectedNodes": []string{"*"}})},
 		"/clash/profiles/{id}.yaml":         gin.H{"get": apiOperation("Clash", "Download hosted Clash profile YAML", "panel:read", nil, pathParam("id", "Clash profile ID"))},
 		"/tenants":                          gin.H{"get": apiOperation("RBAC", "List tenants", "panel:read", nil), "post": apiOperation("RBAC", "Create tenant with node and quota limits", "panel:write", gin.H{"name": "Ops", "nodeAccess": []string{"agt_x"}, "monthlyTrafficQuota": 1073741824, "perNodeTrafficQuota": 268435456, "maxConnections": 1000})},
+		"/tenants/{id}":                     gin.H{"patch": apiOperation("RBAC", "Update tenant status, node access, and quota limits", "panel:write", gin.H{"status": "paused", "nodeAccess": []string{"agt_x"}, "monthlyTrafficQuota": 1073741824}, pathParam("id", "Tenant ID"))},
 		"/users":                            gin.H{"get": apiOperation("RBAC", "List sub-users", "panel:read", nil), "post": apiOperation("RBAC", "Create panel sub-user", "panel:write", gin.H{"username": "operator", "password": "change-me", "tenantId": "ten_x"})},
+		"/users/{id}":                       gin.H{"patch": apiOperation("RBAC", "Update sub-user tenant binding, status, password, node access, and quotas", "panel:write", gin.H{"status": "paused", "nodeAccess": []string{"agt_x"}, "maxConnections": 1000}, pathParam("id", "Panel user ID"))},
 		"/api-keys":                         gin.H{"post": apiOperation("Integrations", "Create scoped API key for third-party systems", "panel:write", gin.H{"name": "Billing", "scopes": []string{"panel:read"}})},
 		"/api-docs":                         gin.H{"get": apiOperation("Integrations", "Read OpenAPI document", "panel:read", nil)},
 		"/copilot/incidents":                gin.H{"get": apiOperation("Copilot", "List Copilot incidents", "panel:read", nil)},

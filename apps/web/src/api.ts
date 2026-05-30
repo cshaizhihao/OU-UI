@@ -435,6 +435,24 @@ export async function createTenant(input: {
   });
 }
 
+export async function updateTenant(
+  id: string,
+  input: Partial<{
+    name: string;
+    status: string;
+    role: string;
+    nodeAccess: string[];
+    monthlyTrafficQuota: number;
+    perNodeTrafficQuota: number;
+    maxConnections: number;
+  }>
+) {
+  return request<Tenant>(`/tenants/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    body: JSON.stringify(input)
+  });
+}
+
 export async function createPanelUser(input: {
   tenantId: string;
   username: string;
@@ -448,6 +466,26 @@ export async function createPanelUser(input: {
 }) {
   return request<PanelUser>("/users", {
     method: "POST",
+    body: JSON.stringify(input)
+  });
+}
+
+export async function updatePanelUser(
+  id: string,
+  input: Partial<{
+    tenantId: string;
+    username: string;
+    password: string;
+    role: string;
+    status: string;
+    nodeAccess: string[];
+    monthlyTrafficQuota: number;
+    perNodeTrafficQuota: number;
+    maxConnections: number;
+  }>
+) {
+  return request<PanelUser>(`/users/${encodeURIComponent(id)}`, {
+    method: "PATCH",
     body: JSON.stringify(input)
   });
 }

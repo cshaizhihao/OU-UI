@@ -2549,6 +2549,17 @@ td span {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+.tenant-governance-panel .workspace-grid.two {
+  align-items: start;
+}
+
+.tenant-governance-panel form {
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 12px;
+  background: #f8fafc;
+}
+
 .incident-list p {
   display: -webkit-box;
   overflow: hidden;
@@ -2968,6 +2979,7 @@ html[data-theme="dark"] .yaml-preview,
 html[data-theme="dark"] .tenant-card,
 html[data-theme="dark"] .tenant-user-card,
 html[data-theme="dark"] .tenant-metric-box,
+html[data-theme="dark"] .tenant-governance-panel form,
 html[data-theme="dark"] .tenant-user-strip span,
 html[data-theme="dark"] .tenant-scope-chips span {
   border-color: rgb(148 163 184 / 18%);

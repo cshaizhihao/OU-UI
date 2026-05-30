@@ -614,7 +614,7 @@ func TestAPIDocsExposeOpenAPISecurityPathsAndScopes(t *testing.T) {
 		t.Fatalf("expected bearerAuth security scheme, got %+v", securitySchemes)
 	}
 	paths := body["paths"].(map[string]any)
-	for _, path := range []string{"/subscriptions/aggregate", "/api-keys", "/copilot/ask", "/traffic/nodes/{id}/samples"} {
+	for _, path := range []string{"/subscriptions/aggregate", "/api-keys", "/copilot/ask", "/traffic/nodes/{id}/samples", "/tenants/{id}", "/users/{id}"} {
 		if _, ok := paths[path]; !ok {
 			t.Fatalf("expected path %s in api docs", path)
 		}
@@ -623,6 +623,11 @@ func TestAPIDocsExposeOpenAPISecurityPathsAndScopes(t *testing.T) {
 	getOp := aggregate["get"].(map[string]any)
 	if getOp["x-ou-scope"] != "panel:read" || getOp["operationId"] == "" {
 		t.Fatalf("expected aggregate operation scope and id, got %+v", getOp)
+	}
+	tenantPatch := paths["/tenants/{id}"].(map[string]any)["patch"].(map[string]any)
+	userPatch := paths["/users/{id}"].(map[string]any)["patch"].(map[string]any)
+	if tenantPatch["x-ou-scope"] != "panel:write" || userPatch["x-ou-scope"] != "panel:write" {
+		t.Fatalf("expected RBAC patch scopes, got tenant=%+v user=%+v", tenantPatch["x-ou-scope"], userPatch["x-ou-scope"])
 	}
 	scopes := body["x-ou-ui-scopes"].([]any)
 	if len(scopes) == 0 {
@@ -746,6 +751,98 @@ func TestTenantPerNodeQuotaSweepIncludesPerNodeOnlyTenants(t *testing.T) {
 	}
 }
 
+func TestOwnerCanUpdateTenantAndPanelUserPolicies(t *testing.T) {
+	db := openTestDB(t)
+	cfg := config.ServerConfig{
+		SecurePath:               "/ou-ui",
+		AdminUser:                "admin",
+		AdminPassword:            "password",
+		JWTSecret:                "test-secret",
+		AgentJoinToken:           "join",
+		AgentOfflineAfterSeconds: 45,
+	}
+	if err := db.Create(&models.Tenant{
+		ID:                  "ten_ops",
+		Name:                "Ops",
+		Status:              "active",
+		Role:                "operator",
+		NodeAccess:          datatypes.JSON(`["agt_a"]`),
+		MonthlyTrafficQuota: 100,
+		PerNodeTrafficQuota: 50,
+		MaxConnections:      10,
+	}).Error; err != nil {
+		t.Fatalf("seed tenant: %v", err)
+	}
+	originalHash := hashSecret("secret")
+	if err := db.Create(&models.PanelUser{
+		ID:                  "usr_ops",
+		TenantID:            "ten_ops",
+		Username:            "operator",
+		PasswordSHA:         originalHash,
+		Role:                "operator",
+		Status:              "active",
+		NodeAccess:          datatypes.JSON(`["agt_a"]`),
+		MonthlyTrafficQuota: 80,
+		PerNodeTrafficQuota: 40,
+		MaxConnections:      8,
+	}).Error; err != nil {
+		t.Fatalf("seed panel user: %v", err)
+	}
+	router := NewRouter(cfg, db)
+
+	loginReq := httptest.NewRequest(http.MethodPost, "/ou-ui/api/v1/auth/login", bytes.NewBufferString(`{"username":"admin","password":"password"}`))
+	loginReq.Header.Set("Content-Type", "application/json")
+	loginResp := httptest.NewRecorder()
+	router.ServeHTTP(loginResp, loginReq)
+	if loginResp.Code != http.StatusOK {
+		t.Fatalf("expected owner login, got %d: %s", loginResp.Code, loginResp.Body.String())
+	}
+	var loginBody struct {
+		Token string `json:"token"`
+	}
+	if err := json.Unmarshal(loginResp.Body.Bytes(), &loginBody); err != nil || loginBody.Token == "" {
+		t.Fatalf("decode login token: %v %q", err, loginResp.Body.String())
+	}
+
+	tenantReq := httptest.NewRequest(http.MethodPatch, "/ou-ui/api/v1/tenants/ten_ops", bytes.NewBufferString(`{"status":"paused","nodeAccess":["agt_b"],"monthlyTrafficQuota":200,"perNodeTrafficQuota":75,"maxConnections":20}`))
+	tenantReq.Header.Set("Authorization", "Bearer "+loginBody.Token)
+	tenantReq.Header.Set("Content-Type", "application/json")
+	tenantResp := httptest.NewRecorder()
+	router.ServeHTTP(tenantResp, tenantReq)
+	if tenantResp.Code != http.StatusOK {
+		t.Fatalf("expected tenant update, got %d: %s", tenantResp.Code, tenantResp.Body.String())
+	}
+	var tenant models.Tenant
+	if err := db.First(&tenant, "id = ?", "ten_ops").Error; err != nil {
+		t.Fatalf("load tenant: %v", err)
+	}
+	if tenant.Name != "Ops" || tenant.Status != "paused" || tenant.MonthlyTrafficQuota != 200 || tenant.PerNodeTrafficQuota != 75 || tenant.MaxConnections != 20 {
+		t.Fatalf("unexpected tenant after update: %+v", tenant)
+	}
+	if access := stringListFromJSON(tenant.NodeAccess); len(access) != 1 || access[0] != "agt_b" {
+		t.Fatalf("unexpected tenant access: %v", access)
+	}
+
+	userReq := httptest.NewRequest(http.MethodPatch, "/ou-ui/api/v1/users/usr_ops", bytes.NewBufferString(`{"status":"paused","nodeAccess":["agt_b"],"monthlyTrafficQuota":180,"perNodeTrafficQuota":70,"maxConnections":18,"password":"new-secret"}`))
+	userReq.Header.Set("Authorization", "Bearer "+loginBody.Token)
+	userReq.Header.Set("Content-Type", "application/json")
+	userResp := httptest.NewRecorder()
+	router.ServeHTTP(userResp, userReq)
+	if userResp.Code != http.StatusOK {
+		t.Fatalf("expected user update, got %d: %s", userResp.Code, userResp.Body.String())
+	}
+	var user models.PanelUser
+	if err := db.First(&user, "id = ?", "usr_ops").Error; err != nil {
+		t.Fatalf("load user: %v", err)
+	}
+	if user.Username != "operator" || user.Status != "paused" || user.PasswordSHA == originalHash || user.MonthlyTrafficQuota != 180 || user.PerNodeTrafficQuota != 70 || user.MaxConnections != 18 {
+		t.Fatalf("unexpected user after update: %+v", user)
+	}
+	if access := stringListFromJSON(user.NodeAccess); len(access) != 1 || access[0] != "agt_b" {
+		t.Fatalf("unexpected user access: %v", access)
+	}
+}
+
 func TestPanelUserCannotCreateTenantsUsersOrAPIKeys(t *testing.T) {
 	db := openTestDB(t)
 	cfg := config.ServerConfig{
@@ -792,15 +889,18 @@ func TestPanelUserCannotCreateTenantsUsersOrAPIKeys(t *testing.T) {
 	}
 
 	for _, tc := range []struct {
-		name string
-		path string
-		body string
+		method string
+		name   string
+		path   string
+		body   string
 	}{
-		{name: "tenant", path: "/ou-ui/api/v1/tenants", body: `{"name":"New Tenant"}`},
-		{name: "user", path: "/ou-ui/api/v1/users", body: `{"username":"operator","password":"secret"}`},
-		{name: "api-key", path: "/ou-ui/api/v1/api-keys", body: `{"name":"Key","scopes":["panel:read"]}`},
+		{method: http.MethodPost, name: "tenant", path: "/ou-ui/api/v1/tenants", body: `{"name":"New Tenant"}`},
+		{method: http.MethodPatch, name: "tenant update", path: "/ou-ui/api/v1/tenants/ten_rbac", body: `{"status":"paused"}`},
+		{method: http.MethodPost, name: "user", path: "/ou-ui/api/v1/users", body: `{"username":"operator","password":"secret"}`},
+		{method: http.MethodPatch, name: "user update", path: "/ou-ui/api/v1/users/usr_rbac", body: `{"status":"paused"}`},
+		{method: http.MethodPost, name: "api-key", path: "/ou-ui/api/v1/api-keys", body: `{"name":"Key","scopes":["panel:read"]}`},
 	} {
-		req := httptest.NewRequest(http.MethodPost, tc.path, bytes.NewBufferString(tc.body))
+		req := httptest.NewRequest(tc.method, tc.path, bytes.NewBufferString(tc.body))
 		req.Header.Set("Authorization", "Bearer "+loginBody.Token)
 		req.Header.Set("Content-Type", "application/json")
 		resp := httptest.NewRecorder()

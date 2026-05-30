@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from "react";
-import { createPanelUser, createTenant, type DashboardDTO } from "../api";
+import { createPanelUser, createTenant, updatePanelUser, updateTenant, type DashboardDTO, type PanelUser, type Tenant } from "../api";
 import {
   gbToBytes,
   NoticeRow,
@@ -35,6 +35,26 @@ export function TenantWorkspace({ data, disabled = false, onRefresh }: TenantWor
     perNodeTrafficGb: 64,
     maxConnections: 500
   });
+  const [tenantPolicy, setTenantPolicy] = useState({
+    id: "",
+    name: "",
+    status: "active",
+    nodeAccess: "",
+    monthlyTrafficGb: 0,
+    perNodeTrafficGb: 0,
+    maxConnections: 0
+  });
+  const [userPolicy, setUserPolicy] = useState({
+    id: "",
+    tenantId: "",
+    username: "",
+    password: "",
+    status: "active",
+    nodeAccess: "",
+    monthlyTrafficGb: 0,
+    perNodeTrafficGb: 0,
+    maxConnections: 0
+  });
   const controlsDisabled = disabled || !data;
 
   useEffect(() => {
@@ -44,6 +64,20 @@ export function TenantWorkspace({ data, disabled = false, onRefresh }: TenantWor
     setTenant((current) => (current.nodeAccess ? current : { ...current, nodeAccess: firstAgentId }));
     setPanelUser((current) => (current.nodeAccess ? current : { ...current, nodeAccess: firstAgentId }));
   }, [firstAgentId]);
+
+  useEffect(() => {
+    const current = data?.control.tenants.find((item) => item.id === tenantPolicy.id) ?? data?.control.tenants[0];
+    if (current && current.id !== tenantPolicy.id) {
+      setTenantPolicy(tenantToPolicy(current));
+    }
+  }, [data?.control.tenants, tenantPolicy.id]);
+
+  useEffect(() => {
+    const current = data?.control.users.find((item) => item.id === userPolicy.id) ?? data?.control.users[0];
+    if (current && current.id !== userPolicy.id) {
+      setUserPolicy(userToPolicy(current));
+    }
+  }, [data?.control.users, userPolicy.id]);
 
   async function runAction(label: string, action: () => Promise<unknown>) {
     setBusy(label);
@@ -91,6 +125,47 @@ export function TenantWorkspace({ data, disabled = false, onRefresh }: TenantWor
     );
   }
 
+  function handleUpdateTenant(event: FormEvent) {
+    event.preventDefault();
+    if (!tenantPolicy.id) {
+      setMessage("请先选择一个租户");
+      return;
+    }
+    void runAction("租户治理", () =>
+      updateTenant(tenantPolicy.id, {
+        name: tenantPolicy.name,
+        status: tenantPolicy.status,
+        role: "operator",
+        nodeAccess: parseCSV(tenantPolicy.nodeAccess),
+        monthlyTrafficQuota: gbToBytes(tenantPolicy.monthlyTrafficGb),
+        perNodeTrafficQuota: gbToBytes(tenantPolicy.perNodeTrafficGb),
+        maxConnections: Number(tenantPolicy.maxConnections) || 0
+      })
+    );
+  }
+
+  function handleUpdatePanelUser(event: FormEvent) {
+    event.preventDefault();
+    if (!userPolicy.id) {
+      setMessage("请先选择一个子账号");
+      return;
+    }
+    const payload: Parameters<typeof updatePanelUser>[1] = {
+      tenantId: userPolicy.tenantId,
+      username: userPolicy.username,
+      status: userPolicy.status,
+      role: "operator",
+      nodeAccess: parseCSV(userPolicy.nodeAccess),
+      monthlyTrafficQuota: gbToBytes(userPolicy.monthlyTrafficGb),
+      perNodeTrafficQuota: gbToBytes(userPolicy.perNodeTrafficGb),
+      maxConnections: Number(userPolicy.maxConnections) || 0
+    };
+    if (userPolicy.password) {
+      payload.password = userPolicy.password;
+    }
+    void runAction("子账号治理", () => updatePanelUser(userPolicy.id, payload));
+  }
+
   return (
     <div className="workspace-view">
       <ViewHeading
@@ -101,6 +176,112 @@ export function TenantWorkspace({ data, disabled = false, onRefresh }: TenantWor
       {message ? <NoticeRow>{message}</NoticeRow> : null}
 
       <TenantOperationsDesk data={data} />
+
+      <section className="panel tenant-governance-panel">
+        <SectionHeader eyebrow="治理操作" title="租户与子账号策略" />
+        <div className="workspace-grid two">
+          <form className="control-form" onSubmit={handleUpdateTenant}>
+            <label className="full-span">
+              租户
+              <select value={tenantPolicy.id} onChange={(event) => setTenantPolicy(tenantToPolicy(data?.control.tenants.find((item) => item.id === event.target.value)))}>
+                {(data?.control.tenants ?? []).map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              租户名称
+              <input value={tenantPolicy.name} onChange={(event) => setTenantPolicy({ ...tenantPolicy, name: event.target.value })} />
+            </label>
+            <label>
+              状态
+              <select value={tenantPolicy.status} onChange={(event) => setTenantPolicy({ ...tenantPolicy, status: event.target.value })}>
+                <option value="active">启用</option>
+                <option value="paused">暂停</option>
+              </select>
+            </label>
+            <label className="full-span">
+              节点访问
+              <input value={tenantPolicy.nodeAccess} onChange={(event) => setTenantPolicy({ ...tenantPolicy, nodeAccess: event.target.value })} />
+            </label>
+            <label>
+              月度 GB 配额
+              <input type="number" value={tenantPolicy.monthlyTrafficGb} onChange={(event) => setTenantPolicy({ ...tenantPolicy, monthlyTrafficGb: Number(event.target.value) })} />
+            </label>
+            <label>
+              单节点 GB 配额
+              <input type="number" value={tenantPolicy.perNodeTrafficGb} onChange={(event) => setTenantPolicy({ ...tenantPolicy, perNodeTrafficGb: Number(event.target.value) })} />
+            </label>
+            <label>
+              最大连接数
+              <input type="number" value={tenantPolicy.maxConnections} onChange={(event) => setTenantPolicy({ ...tenantPolicy, maxConnections: Number(event.target.value) })} />
+            </label>
+            <button className="primary-button" disabled={Boolean(busy) || controlsDisabled || !tenantPolicy.id} type="submit">
+              保存租户策略
+            </button>
+          </form>
+
+          <form className="control-form" onSubmit={handleUpdatePanelUser}>
+            <label className="full-span">
+              子账号
+              <select value={userPolicy.id} onChange={(event) => setUserPolicy(userToPolicy(data?.control.users.find((item) => item.id === event.target.value)))}>
+                {(data?.control.users ?? []).map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.username}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              用户名
+              <input value={userPolicy.username} onChange={(event) => setUserPolicy({ ...userPolicy, username: event.target.value })} />
+            </label>
+            <label>
+              状态
+              <select value={userPolicy.status} onChange={(event) => setUserPolicy({ ...userPolicy, status: event.target.value })}>
+                <option value="active">启用</option>
+                <option value="paused">暂停</option>
+              </select>
+            </label>
+            <label>
+              租户
+              <select value={userPolicy.tenantId} onChange={(event) => setUserPolicy({ ...userPolicy, tenantId: event.target.value })}>
+                <option value="">主租户</option>
+                {(data?.control.tenants ?? []).map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              临时密码
+              <input minLength={10} placeholder="留空则不变" type="password" value={userPolicy.password} onChange={(event) => setUserPolicy({ ...userPolicy, password: event.target.value })} />
+            </label>
+            <label className="full-span">
+              节点访问
+              <input value={userPolicy.nodeAccess} onChange={(event) => setUserPolicy({ ...userPolicy, nodeAccess: event.target.value })} />
+            </label>
+            <label>
+              月度 GB 配额
+              <input type="number" value={userPolicy.monthlyTrafficGb} onChange={(event) => setUserPolicy({ ...userPolicy, monthlyTrafficGb: Number(event.target.value) })} />
+            </label>
+            <label>
+              单节点 GB 配额
+              <input type="number" value={userPolicy.perNodeTrafficGb} onChange={(event) => setUserPolicy({ ...userPolicy, perNodeTrafficGb: Number(event.target.value) })} />
+            </label>
+            <label>
+              最大连接数
+              <input type="number" value={userPolicy.maxConnections} onChange={(event) => setUserPolicy({ ...userPolicy, maxConnections: Number(event.target.value) })} />
+            </label>
+            <button className="ghost-button" disabled={Boolean(busy) || controlsDisabled || !userPolicy.id} type="submit">
+              保存子账号策略
+            </button>
+          </form>
+        </div>
+      </section>
 
       <div className="workspace-grid two">
         <section className="panel">
@@ -209,4 +390,37 @@ export function TenantWorkspace({ data, disabled = false, onRefresh }: TenantWor
       </div>
     </div>
   );
+}
+
+function tenantToPolicy(tenant?: Tenant) {
+  return {
+    id: tenant?.id ?? "",
+    name: tenant?.name ?? "",
+    status: tenant?.status ?? "active",
+    nodeAccess: (tenant?.nodeAccess ?? []).join(","),
+    monthlyTrafficGb: bytesToGb(tenant?.monthlyTrafficQuota ?? 0),
+    perNodeTrafficGb: bytesToGb(tenant?.perNodeTrafficQuota ?? 0),
+    maxConnections: tenant?.maxConnections ?? 0
+  };
+}
+
+function userToPolicy(user?: PanelUser) {
+  return {
+    id: user?.id ?? "",
+    tenantId: user?.tenantId ?? "",
+    username: user?.username ?? "",
+    password: "",
+    status: user?.status ?? "active",
+    nodeAccess: (user?.nodeAccess ?? []).join(","),
+    monthlyTrafficGb: bytesToGb(user?.monthlyTrafficQuota ?? 0),
+    perNodeTrafficGb: bytesToGb(user?.perNodeTrafficQuota ?? 0),
+    maxConnections: user?.maxConnections ?? 0
+  };
+}
+
+function bytesToGb(value: number): number {
+  if (!Number.isFinite(value) || value <= 0) {
+    return 0;
+  }
+  return Math.round(value / 1024 / 1024 / 1024);
 }
