@@ -275,15 +275,18 @@ type PanelUser struct {
 }
 
 type APIKey struct {
-	ID         string         `gorm:"primaryKey" json:"id"`
-	TenantID   string         `gorm:"index" json:"tenantId"`
-	Name       string         `json:"name"`
-	KeyHash    string         `json:"-"`
-	Scopes     datatypes.JSON `json:"scopes"`
-	Status     string         `json:"status"`
-	LastUsedAt *time.Time     `json:"lastUsedAt"`
-	CreatedAt  time.Time      `json:"createdAt"`
-	UpdatedAt  time.Time      `json:"updatedAt"`
+	ID                string         `gorm:"primaryKey" json:"id"`
+	TenantID          string         `gorm:"index" json:"tenantId"`
+	Name              string         `json:"name"`
+	KeyHash           string         `json:"-"`
+	Scopes            datatypes.JSON `json:"scopes"`
+	Status            string         `json:"status"`
+	ExpiresAt         *time.Time     `json:"expiresAt"`
+	LastUsedAt        *time.Time     `json:"lastUsedAt"`
+	LastUsedIP        string         `json:"lastUsedIp"`
+	LastUsedUserAgent string         `json:"lastUsedUserAgent"`
+	CreatedAt         time.Time      `json:"createdAt"`
+	UpdatedAt         time.Time      `json:"updatedAt"`
 }
 
 type CopilotIncident struct {

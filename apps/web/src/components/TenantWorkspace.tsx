@@ -3,7 +3,6 @@ import { createPanelUser, createTenant, updatePanelUser, updateTenant, type Dash
 import {
   gbToBytes,
   NoticeRow,
-  parseCSV,
   SectionHeader,
   ViewHeading
 } from "./ConsolePrimitives";
@@ -21,7 +20,7 @@ export function TenantWorkspace({ data, disabled = false, onRefresh }: TenantWor
   const [message, setMessage] = useState("");
   const [tenant, setTenant] = useState({
     name: "运维租户",
-    nodeAccess: firstAgentId,
+    nodeAccess: [] as string[],
     monthlyTrafficGb: 1024,
     perNodeTrafficGb: 256,
     maxConnections: 2000
@@ -30,7 +29,7 @@ export function TenantWorkspace({ data, disabled = false, onRefresh }: TenantWor
     username: "operator",
     password: "",
     tenantId: "",
-    nodeAccess: firstAgentId,
+    nodeAccess: [] as string[],
     monthlyTrafficGb: 256,
     perNodeTrafficGb: 64,
     maxConnections: 500
@@ -39,7 +38,7 @@ export function TenantWorkspace({ data, disabled = false, onRefresh }: TenantWor
     id: "",
     name: "",
     status: "active",
-    nodeAccess: "",
+    nodeAccess: [] as string[],
     monthlyTrafficGb: 0,
     perNodeTrafficGb: 0,
     maxConnections: 0
@@ -50,7 +49,7 @@ export function TenantWorkspace({ data, disabled = false, onRefresh }: TenantWor
     username: "",
     password: "",
     status: "active",
-    nodeAccess: "",
+    nodeAccess: [] as string[],
     monthlyTrafficGb: 0,
     perNodeTrafficGb: 0,
     maxConnections: 0
@@ -58,12 +57,13 @@ export function TenantWorkspace({ data, disabled = false, onRefresh }: TenantWor
   const controlsDisabled = disabled || !data;
 
   useEffect(() => {
-    if (!firstAgentId) {
+    if (!data) {
       return;
     }
-    setTenant((current) => (current.nodeAccess ? current : { ...current, nodeAccess: firstAgentId }));
-    setPanelUser((current) => (current.nodeAccess ? current : { ...current, nodeAccess: firstAgentId }));
-  }, [firstAgentId]);
+    const fallbackAccess = firstAgentId ? [firstAgentId] : ["*"];
+    setTenant((current) => (current.nodeAccess.length ? current : { ...current, nodeAccess: fallbackAccess }));
+    setPanelUser((current) => (current.nodeAccess.length ? current : { ...current, nodeAccess: fallbackAccess }));
+  }, [data, firstAgentId]);
 
   useEffect(() => {
     const current = data?.control.tenants.find((item) => item.id === tenantPolicy.id) ?? data?.control.tenants[0];
@@ -100,7 +100,7 @@ export function TenantWorkspace({ data, disabled = false, onRefresh }: TenantWor
         name: tenant.name,
         status: "active",
         role: "operator",
-        nodeAccess: parseCSV(tenant.nodeAccess),
+        nodeAccess: tenant.nodeAccess,
         monthlyTrafficQuota: gbToBytes(tenant.monthlyTrafficGb),
         perNodeTrafficQuota: gbToBytes(tenant.perNodeTrafficGb),
         maxConnections: Number(tenant.maxConnections) || 0
@@ -117,7 +117,7 @@ export function TenantWorkspace({ data, disabled = false, onRefresh }: TenantWor
         tenantId: panelUser.tenantId,
         role: "operator",
         status: "active",
-        nodeAccess: parseCSV(panelUser.nodeAccess),
+        nodeAccess: panelUser.nodeAccess,
         monthlyTrafficQuota: gbToBytes(panelUser.monthlyTrafficGb),
         perNodeTrafficQuota: gbToBytes(panelUser.perNodeTrafficGb),
         maxConnections: Number(panelUser.maxConnections) || 0
@@ -136,7 +136,7 @@ export function TenantWorkspace({ data, disabled = false, onRefresh }: TenantWor
         name: tenantPolicy.name,
         status: tenantPolicy.status,
         role: "operator",
-        nodeAccess: parseCSV(tenantPolicy.nodeAccess),
+        nodeAccess: tenantPolicy.nodeAccess,
         monthlyTrafficQuota: gbToBytes(tenantPolicy.monthlyTrafficGb),
         perNodeTrafficQuota: gbToBytes(tenantPolicy.perNodeTrafficGb),
         maxConnections: Number(tenantPolicy.maxConnections) || 0
@@ -155,7 +155,7 @@ export function TenantWorkspace({ data, disabled = false, onRefresh }: TenantWor
       username: userPolicy.username,
       status: userPolicy.status,
       role: "operator",
-      nodeAccess: parseCSV(userPolicy.nodeAccess),
+      nodeAccess: userPolicy.nodeAccess,
       monthlyTrafficQuota: gbToBytes(userPolicy.monthlyTrafficGb),
       perNodeTrafficQuota: gbToBytes(userPolicy.perNodeTrafficGb),
       maxConnections: Number(userPolicy.maxConnections) || 0
@@ -202,10 +202,13 @@ export function TenantWorkspace({ data, disabled = false, onRefresh }: TenantWor
                 <option value="paused">暂停</option>
               </select>
             </label>
-            <label className="full-span">
-              节点访问
-              <input value={tenantPolicy.nodeAccess} onChange={(event) => setTenantPolicy({ ...tenantPolicy, nodeAccess: event.target.value })} />
-            </label>
+            <AccessScopePicker
+              data={data}
+              disabled={Boolean(busy) || controlsDisabled}
+              label="节点访问"
+              onChange={(nodeAccess) => setTenantPolicy({ ...tenantPolicy, nodeAccess })}
+              value={tenantPolicy.nodeAccess}
+            />
             <label>
               月度 GB 配额
               <input type="number" value={tenantPolicy.monthlyTrafficGb} onChange={(event) => setTenantPolicy({ ...tenantPolicy, monthlyTrafficGb: Number(event.target.value) })} />
@@ -260,10 +263,13 @@ export function TenantWorkspace({ data, disabled = false, onRefresh }: TenantWor
               临时密码
               <input minLength={10} placeholder="留空则不变" type="password" value={userPolicy.password} onChange={(event) => setUserPolicy({ ...userPolicy, password: event.target.value })} />
             </label>
-            <label className="full-span">
-              节点访问
-              <input value={userPolicy.nodeAccess} onChange={(event) => setUserPolicy({ ...userPolicy, nodeAccess: event.target.value })} />
-            </label>
+            <AccessScopePicker
+              data={data}
+              disabled={Boolean(busy) || controlsDisabled}
+              label="节点访问"
+              onChange={(nodeAccess) => setUserPolicy({ ...userPolicy, nodeAccess })}
+              value={userPolicy.nodeAccess}
+            />
             <label>
               月度 GB 配额
               <input type="number" value={userPolicy.monthlyTrafficGb} onChange={(event) => setUserPolicy({ ...userPolicy, monthlyTrafficGb: Number(event.target.value) })} />
@@ -291,10 +297,13 @@ export function TenantWorkspace({ data, disabled = false, onRefresh }: TenantWor
               租户名称
               <input value={tenant.name} onChange={(event) => setTenant({ ...tenant, name: event.target.value })} />
             </label>
-            <label>
-              节点访问
-              <input value={tenant.nodeAccess} onChange={(event) => setTenant({ ...tenant, nodeAccess: event.target.value })} />
-            </label>
+            <AccessScopePicker
+              data={data}
+              disabled={Boolean(busy) || controlsDisabled}
+              label="节点访问"
+              onChange={(nodeAccess) => setTenant({ ...tenant, nodeAccess })}
+              value={tenant.nodeAccess}
+            />
             <label>
               月度 GB 配额
               <input
@@ -354,10 +363,13 @@ export function TenantWorkspace({ data, disabled = false, onRefresh }: TenantWor
                 ))}
               </select>
             </label>
-            <label>
-              节点访问
-              <input value={panelUser.nodeAccess} onChange={(event) => setPanelUser({ ...panelUser, nodeAccess: event.target.value })} />
-            </label>
+            <AccessScopePicker
+              data={data}
+              disabled={Boolean(busy) || controlsDisabled}
+              label="节点访问"
+              onChange={(nodeAccess) => setPanelUser({ ...panelUser, nodeAccess })}
+              value={panelUser.nodeAccess}
+            />
             <label>
               月度 GB 配额
               <input
@@ -397,7 +409,7 @@ function tenantToPolicy(tenant?: Tenant) {
     id: tenant?.id ?? "",
     name: tenant?.name ?? "",
     status: tenant?.status ?? "active",
-    nodeAccess: (tenant?.nodeAccess ?? []).join(","),
+    nodeAccess: tenant?.nodeAccess ?? [],
     monthlyTrafficGb: bytesToGb(tenant?.monthlyTrafficQuota ?? 0),
     perNodeTrafficGb: bytesToGb(tenant?.perNodeTrafficQuota ?? 0),
     maxConnections: tenant?.maxConnections ?? 0
@@ -411,7 +423,7 @@ function userToPolicy(user?: PanelUser) {
     username: user?.username ?? "",
     password: "",
     status: user?.status ?? "active",
-    nodeAccess: (user?.nodeAccess ?? []).join(","),
+    nodeAccess: user?.nodeAccess ?? [],
     monthlyTrafficGb: bytesToGb(user?.monthlyTrafficQuota ?? 0),
     perNodeTrafficGb: bytesToGb(user?.perNodeTrafficQuota ?? 0),
     maxConnections: user?.maxConnections ?? 0
@@ -423,4 +435,90 @@ function bytesToGb(value: number): number {
     return 0;
   }
   return Math.round(value / 1024 / 1024 / 1024);
+}
+
+type AccessScopePickerProps = {
+  data: DashboardDTO | null;
+  disabled?: boolean;
+  label: string;
+  onChange: (value: string[]) => void;
+  value: string[];
+};
+
+function AccessScopePicker({ data, disabled = false, label, onChange, value }: AccessScopePickerProps) {
+  const options = accessOptions(data);
+  const normalized = normalizeAccess(value);
+  const wildcardSelected = normalized.includes("*") || normalized.length === 0;
+
+  function toggle(id: string) {
+    if (disabled) {
+      return;
+    }
+    if (id === "*") {
+      onChange(["*"]);
+      return;
+    }
+    const current = wildcardSelected ? [] : normalized;
+    if (current.includes(id)) {
+      const next = current.filter((item) => item !== id);
+      onChange(next.length ? next : ["*"]);
+      return;
+    }
+    onChange([...current, id]);
+  }
+
+  return (
+    <fieldset className="access-scope-picker full-span" disabled={disabled}>
+      <legend>{label}</legend>
+      <div className="access-scope-summary">
+        <strong>{wildcardSelected ? "全部节点" : `${normalized.length} 个范围`}</strong>
+        <span>{wildcardSelected ? "租户可访问所有 Agent 与托管节点" : "按 Agent 或单节点精确授权"}</span>
+      </div>
+      <div className="access-scope-options">
+        <button className={wildcardSelected ? "selected" : ""} onClick={() => toggle("*")} type="button">
+          <strong>全部节点</strong>
+          <span>*</span>
+        </button>
+        {options.map((option) => {
+          const selected = !wildcardSelected && normalized.includes(option.id);
+          return (
+            <button className={selected ? "selected" : ""} key={option.id} onClick={() => toggle(option.id)} type="button">
+              <strong>{option.label}</strong>
+              <span>{option.meta}</span>
+            </button>
+          );
+        })}
+      </div>
+      {options.length === 0 ? <p className="empty-state">等待 Agent 或托管节点接入</p> : null}
+    </fieldset>
+  );
+}
+
+function accessOptions(data: DashboardDTO | null) {
+  const agentOptions = (data?.agents ?? []).map((agent) => ({
+    id: agent.id,
+    label: `Agent: ${agent.name}`,
+    meta: `${agent.status} / ${agent.runtime} / ${agent.id}`
+  }));
+  const nodeOptions = (data?.control.nodes ?? []).map((node) => ({
+    id: node.id,
+    label: `Node: ${node.name}`,
+    meta: `${node.protocol} / ${node.runtime} / ${node.agentId}`
+  }));
+  return [...agentOptions, ...nodeOptions];
+}
+
+function normalizeAccess(values: string[]) {
+  const seen = new Set<string>();
+  return values
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .filter((item) => {
+      const key = item.toLowerCase();
+      if (seen.has(key)) {
+        return false;
+      }
+      seen.add(key);
+      return true;
+    });
 }

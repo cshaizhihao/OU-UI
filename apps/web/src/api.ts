@@ -180,8 +180,25 @@ export type APIKeyCreateResponse = {
     name: string;
     status: string;
     tenantId?: string;
+    scopes?: string[];
+    expiresAt?: string;
+    lastUsedAt?: string;
   };
   apiKey: string;
+};
+
+export type APIKey = {
+  id: string;
+  tenantId?: string;
+  name: string;
+  scopes?: string[];
+  status: string;
+  expiresAt?: string;
+  lastUsedAt?: string;
+  lastUsedIp?: string;
+  lastUsedUserAgent?: string;
+  createdAt?: string;
+  updatedAt?: string;
 };
 
 export type CopilotIncident = {
@@ -495,10 +512,37 @@ export async function createAPIKey(input: {
   name: string;
   scopes: string[];
   status: string;
+  expiresAt?: string;
 }) {
   return request<APIKeyCreateResponse>("/api-keys", {
     method: "POST",
     body: JSON.stringify(input)
+  });
+}
+
+export async function listAPIKeys() {
+  return request<ListResponse<APIKey>>("/api-keys");
+}
+
+export async function updateAPIKey(
+  id: string,
+  input: Partial<{
+    tenantId: string;
+    name: string;
+    scopes: string[];
+    status: string;
+    expiresAt: string;
+  }>
+) {
+  return request<APIKey>(`/api-keys/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    body: JSON.stringify(input)
+  });
+}
+
+export async function revokeAPIKey(id: string) {
+  return request<{ ok: boolean; item: APIKey }>(`/api-keys/${encodeURIComponent(id)}`, {
+    method: "DELETE"
   });
 }
 

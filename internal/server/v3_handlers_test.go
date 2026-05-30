@@ -614,7 +614,7 @@ func TestAPIDocsExposeOpenAPISecurityPathsAndScopes(t *testing.T) {
 		t.Fatalf("expected bearerAuth security scheme, got %+v", securitySchemes)
 	}
 	paths := body["paths"].(map[string]any)
-	for _, path := range []string{"/subscriptions/aggregate", "/api-keys", "/copilot/ask", "/traffic/nodes/{id}/samples", "/tenants/{id}", "/users/{id}"} {
+	for _, path := range []string{"/subscriptions/aggregate", "/api-keys", "/api-keys/{id}", "/copilot/ask", "/traffic/nodes/{id}/samples", "/tenants/{id}", "/users/{id}"} {
 		if _, ok := paths[path]; !ok {
 			t.Fatalf("expected path %s in api docs", path)
 		}
@@ -628,6 +628,11 @@ func TestAPIDocsExposeOpenAPISecurityPathsAndScopes(t *testing.T) {
 	userPatch := paths["/users/{id}"].(map[string]any)["patch"].(map[string]any)
 	if tenantPatch["x-ou-scope"] != "panel:write" || userPatch["x-ou-scope"] != "panel:write" {
 		t.Fatalf("expected RBAC patch scopes, got tenant=%+v user=%+v", tenantPatch["x-ou-scope"], userPatch["x-ou-scope"])
+	}
+	apiKeyPatch := paths["/api-keys/{id}"].(map[string]any)["patch"].(map[string]any)
+	apiKeyDelete := paths["/api-keys/{id}"].(map[string]any)["delete"].(map[string]any)
+	if apiKeyPatch["x-ou-scope"] != "panel:write" || apiKeyDelete["x-ou-scope"] != "panel:write" {
+		t.Fatalf("expected API key lifecycle scopes, got patch=%+v delete=%+v", apiKeyPatch["x-ou-scope"], apiKeyDelete["x-ou-scope"])
 	}
 	scopes := body["x-ou-ui-scopes"].([]any)
 	if len(scopes) == 0 {
@@ -843,6 +848,120 @@ func TestOwnerCanUpdateTenantAndPanelUserPolicies(t *testing.T) {
 	}
 }
 
+func TestOwnerCanGovernAPIKeyLifecycle(t *testing.T) {
+	db := openTestDB(t)
+	cfg := config.ServerConfig{
+		SecurePath:               "/ou-ui",
+		AdminUser:                "admin",
+		AdminPassword:            "password",
+		JWTSecret:                "test-secret",
+		AgentJoinToken:           "join",
+		AgentOfflineAfterSeconds: 45,
+	}
+	if err := db.Create(&models.Tenant{
+		ID:         "ten_api",
+		Name:       "API Tenant",
+		Status:     "active",
+		Role:       "operator",
+		NodeAccess: datatypes.JSON(`["*"]`),
+	}).Error; err != nil {
+		t.Fatalf("seed tenant: %v", err)
+	}
+	router := NewRouter(cfg, db)
+
+	loginReq := httptest.NewRequest(http.MethodPost, "/ou-ui/api/v1/auth/login", bytes.NewBufferString(`{"username":"admin","password":"password"}`))
+	loginReq.Header.Set("Content-Type", "application/json")
+	loginResp := httptest.NewRecorder()
+	router.ServeHTTP(loginResp, loginReq)
+	if loginResp.Code != http.StatusOK {
+		t.Fatalf("expected owner login, got %d: %s", loginResp.Code, loginResp.Body.String())
+	}
+	var loginBody struct {
+		Token string `json:"token"`
+	}
+	if err := json.Unmarshal(loginResp.Body.Bytes(), &loginBody); err != nil || loginBody.Token == "" {
+		t.Fatalf("decode login token: %v %q", err, loginResp.Body.String())
+	}
+
+	expiresAt := time.Now().UTC().Add(24 * time.Hour).Format(time.RFC3339)
+	createReq := httptest.NewRequest(http.MethodPost, "/ou-ui/api/v1/api-keys", bytes.NewBufferString(`{"name":"Billing","tenantId":"ten_api","scopes":["panel:read"],"expiresAt":"`+expiresAt+`"}`))
+	createReq.Header.Set("Authorization", "Bearer "+loginBody.Token)
+	createReq.Header.Set("Content-Type", "application/json")
+	createResp := httptest.NewRecorder()
+	router.ServeHTTP(createResp, createReq)
+	if createResp.Code != http.StatusOK {
+		t.Fatalf("expected api key create, got %d: %s", createResp.Code, createResp.Body.String())
+	}
+	var created struct {
+		Item   models.APIKey `json:"item"`
+		APIKey string        `json:"apiKey"`
+	}
+	if err := json.Unmarshal(createResp.Body.Bytes(), &created); err != nil || created.APIKey == "" || created.Item.ID == "" {
+		t.Fatalf("decode created api key: %v %s", err, createResp.Body.String())
+	}
+	if strings.Contains(createResp.Body.String(), hashSecret(created.APIKey)) {
+		t.Fatalf("api key hash leaked in create response: %s", createResp.Body.String())
+	}
+
+	listReq := httptest.NewRequest(http.MethodGet, "/ou-ui/api/v1/api-keys", nil)
+	listReq.Header.Set("Authorization", "Bearer "+loginBody.Token)
+	listResp := httptest.NewRecorder()
+	router.ServeHTTP(listResp, listReq)
+	if listResp.Code != http.StatusOK || !strings.Contains(listResp.Body.String(), created.Item.ID) || strings.Contains(listResp.Body.String(), created.APIKey) {
+		t.Fatalf("expected api key metadata list without raw key, got %d: %s", listResp.Code, listResp.Body.String())
+	}
+
+	readReq := httptest.NewRequest(http.MethodGet, "/ou-ui/api/v1/agents", nil)
+	readReq.Header.Set("Authorization", "Bearer "+created.APIKey)
+	readResp := httptest.NewRecorder()
+	router.ServeHTTP(readResp, readReq)
+	if readResp.Code != http.StatusOK {
+		t.Fatalf("expected active api key read, got %d: %s", readResp.Code, readResp.Body.String())
+	}
+	var used models.APIKey
+	if err := db.First(&used, "id = ?", created.Item.ID).Error; err != nil || used.LastUsedAt == nil || used.LastUsedIP == "" {
+		t.Fatalf("expected last-used metadata to be recorded: key=%+v err=%v", used, err)
+	}
+
+	patchReq := httptest.NewRequest(http.MethodPatch, "/ou-ui/api/v1/api-keys/"+created.Item.ID, bytes.NewBufferString(`{"name":"Billing Paused","status":"paused","scopes":["panel:read","panel:write"]}`))
+	patchReq.Header.Set("Authorization", "Bearer "+loginBody.Token)
+	patchReq.Header.Set("Content-Type", "application/json")
+	patchResp := httptest.NewRecorder()
+	router.ServeHTTP(patchResp, patchReq)
+	if patchResp.Code != http.StatusOK || !strings.Contains(patchResp.Body.String(), "Billing Paused") {
+		t.Fatalf("expected api key patch, got %d: %s", patchResp.Code, patchResp.Body.String())
+	}
+
+	pausedReq := httptest.NewRequest(http.MethodGet, "/ou-ui/api/v1/agents", nil)
+	pausedReq.Header.Set("Authorization", "Bearer "+created.APIKey)
+	pausedResp := httptest.NewRecorder()
+	router.ServeHTTP(pausedResp, pausedReq)
+	if pausedResp.Code != http.StatusUnauthorized {
+		t.Fatalf("expected paused api key to be rejected, got %d: %s", pausedResp.Code, pausedResp.Body.String())
+	}
+
+	enableReq := httptest.NewRequest(http.MethodPatch, "/ou-ui/api/v1/api-keys/"+created.Item.ID, bytes.NewBufferString(`{"status":"active"}`))
+	enableReq.Header.Set("Authorization", "Bearer "+loginBody.Token)
+	enableReq.Header.Set("Content-Type", "application/json")
+	enableResp := httptest.NewRecorder()
+	router.ServeHTTP(enableResp, enableReq)
+	if enableResp.Code != http.StatusOK {
+		t.Fatalf("expected api key enable, got %d: %s", enableResp.Code, enableResp.Body.String())
+	}
+
+	deleteReq := httptest.NewRequest(http.MethodDelete, "/ou-ui/api/v1/api-keys/"+created.Item.ID, nil)
+	deleteReq.Header.Set("Authorization", "Bearer "+loginBody.Token)
+	deleteResp := httptest.NewRecorder()
+	router.ServeHTTP(deleteResp, deleteReq)
+	if deleteResp.Code != http.StatusOK {
+		t.Fatalf("expected api key revoke, got %d: %s", deleteResp.Code, deleteResp.Body.String())
+	}
+	var revoked models.APIKey
+	if err := db.First(&revoked, "id = ?", created.Item.ID).Error; err != nil || revoked.Status != "revoked" {
+		t.Fatalf("expected api key to be revoked, got %+v err=%v", revoked, err)
+	}
+}
+
 func TestPanelUserCannotCreateTenantsUsersOrAPIKeys(t *testing.T) {
 	db := openTestDB(t)
 	cfg := config.ServerConfig{
@@ -898,7 +1017,10 @@ func TestPanelUserCannotCreateTenantsUsersOrAPIKeys(t *testing.T) {
 		{method: http.MethodPatch, name: "tenant update", path: "/ou-ui/api/v1/tenants/ten_rbac", body: `{"status":"paused"}`},
 		{method: http.MethodPost, name: "user", path: "/ou-ui/api/v1/users", body: `{"username":"operator","password":"secret"}`},
 		{method: http.MethodPatch, name: "user update", path: "/ou-ui/api/v1/users/usr_rbac", body: `{"status":"paused"}`},
+		{method: http.MethodGet, name: "api-key list", path: "/ou-ui/api/v1/api-keys", body: ``},
 		{method: http.MethodPost, name: "api-key", path: "/ou-ui/api/v1/api-keys", body: `{"name":"Key","scopes":["panel:read"]}`},
+		{method: http.MethodPatch, name: "api-key update", path: "/ou-ui/api/v1/api-keys/key_rbac", body: `{"status":"paused"}`},
+		{method: http.MethodDelete, name: "api-key revoke", path: "/ou-ui/api/v1/api-keys/key_rbac", body: ``},
 	} {
 		req := httptest.NewRequest(tc.method, tc.path, bytes.NewBufferString(tc.body))
 		req.Header.Set("Authorization", "Bearer "+loginBody.Token)

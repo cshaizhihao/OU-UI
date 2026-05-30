@@ -2112,10 +2112,28 @@ func normalizeRBACStatus(value string) string {
 }
 
 type apiKeyRequest struct {
-	TenantID string   `json:"tenantId"`
-	Name     string   `json:"name"`
-	Scopes   []string `json:"scopes"`
-	Status   string   `json:"status"`
+	TenantID  string     `json:"tenantId"`
+	Name      string     `json:"name"`
+	Scopes    []string   `json:"scopes"`
+	Status    string     `json:"status"`
+	ExpiresAt *time.Time `json:"expiresAt"`
+}
+
+type apiKeyPatchRequest struct {
+	TenantID  *string    `json:"tenantId"`
+	Name      *string    `json:"name"`
+	Scopes    []string   `json:"scopes"`
+	Status    *string    `json:"status"`
+	ExpiresAt *time.Time `json:"expiresAt"`
+}
+
+func (h Handler) listAPIKeys(c *gin.Context) {
+	var keys []models.APIKey
+	if err := h.db.Order("updated_at desc").Find(&keys).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "query api keys failed"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"items": keys})
 }
 
 func (h Handler) createAPIKey(c *gin.Context) {
@@ -2138,12 +2156,13 @@ func (h Handler) createAPIKey(c *gin.Context) {
 	}
 	rawKey := "ouak_" + randomHex(24)
 	key := models.APIKey{
-		ID:       "key_" + randomHex(8),
-		TenantID: tenantID,
-		Name:     strings.TrimSpace(req.Name),
-		KeyHash:  hashSecret(rawKey),
-		Scopes:   mustJSON(scopes),
-		Status:   defaultNonEmpty(req.Status, "active"),
+		ID:        "key_" + randomHex(8),
+		TenantID:  tenantID,
+		Name:      strings.TrimSpace(req.Name),
+		KeyHash:   hashSecret(rawKey),
+		Scopes:    mustJSON(scopes),
+		Status:    normalizeAPIKeyStatus(req.Status),
+		ExpiresAt: req.ExpiresAt,
 	}
 	if err := h.db.Create(&key).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "create api key failed"})
@@ -2151,6 +2170,78 @@ func (h Handler) createAPIKey(c *gin.Context) {
 	}
 	h.audit("panel", "apikey.create", key.ID, key.Name)
 	c.JSON(http.StatusOK, gin.H{"item": key, "apiKey": rawKey})
+}
+
+func (h Handler) updateAPIKey(c *gin.Context) {
+	var key models.APIKey
+	if err := h.db.First(&key, "id = ?", c.Param("id")).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "api key not found"})
+		return
+	}
+	var req apiKeyPatchRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request"})
+		return
+	}
+	if req.TenantID != nil {
+		tenantID := strings.TrimSpace(*req.TenantID)
+		if tenantID != "" {
+			var tenant models.Tenant
+			if err := h.db.Select("id").Where("id = ? AND status = ?", tenantID, "active").First(&tenant).Error; err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "tenant is not active"})
+				return
+			}
+		}
+		key.TenantID = tenantID
+	}
+	if req.Name != nil && strings.TrimSpace(*req.Name) != "" {
+		key.Name = strings.TrimSpace(*req.Name)
+	}
+	if req.Scopes != nil {
+		scopes := compactStringList(req.Scopes)
+		if len(scopes) == 0 {
+			scopes = []string{"panel:read"}
+		}
+		key.Scopes = mustJSON(scopes)
+	}
+	if req.Status != nil {
+		key.Status = normalizeAPIKeyStatus(*req.Status)
+	}
+	if req.ExpiresAt != nil {
+		key.ExpiresAt = req.ExpiresAt
+	}
+	if err := h.db.Save(&key).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "update api key failed"})
+		return
+	}
+	h.audit("panel", "apikey.update", key.ID, key.Name)
+	c.JSON(http.StatusOK, key)
+}
+
+func (h Handler) revokeAPIKey(c *gin.Context) {
+	var key models.APIKey
+	if err := h.db.First(&key, "id = ?", c.Param("id")).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "api key not found"})
+		return
+	}
+	key.Status = "revoked"
+	if err := h.db.Save(&key).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "revoke api key failed"})
+		return
+	}
+	h.audit("panel", "apikey.revoke", key.ID, key.Name)
+	c.JSON(http.StatusOK, gin.H{"ok": true, "item": key})
+}
+
+func normalizeAPIKeyStatus(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "paused", "disabled", "inactive":
+		return "paused"
+	case "revoked":
+		return "revoked"
+	default:
+		return "active"
+	}
 }
 
 func (h Handler) apiDocs(c *gin.Context) {
@@ -2228,7 +2319,8 @@ func openAPIPaths() gin.H {
 		"/tenants/{id}":                     gin.H{"patch": apiOperation("RBAC", "Update tenant status, node access, and quota limits", "panel:write", gin.H{"status": "paused", "nodeAccess": []string{"agt_x"}, "monthlyTrafficQuota": 1073741824}, pathParam("id", "Tenant ID"))},
 		"/users":                            gin.H{"get": apiOperation("RBAC", "List sub-users", "panel:read", nil), "post": apiOperation("RBAC", "Create panel sub-user", "panel:write", gin.H{"username": "operator", "password": "change-me", "tenantId": "ten_x"})},
 		"/users/{id}":                       gin.H{"patch": apiOperation("RBAC", "Update sub-user tenant binding, status, password, node access, and quotas", "panel:write", gin.H{"status": "paused", "nodeAccess": []string{"agt_x"}, "maxConnections": 1000}, pathParam("id", "Panel user ID"))},
-		"/api-keys":                         gin.H{"post": apiOperation("Integrations", "Create scoped API key for third-party systems", "panel:write", gin.H{"name": "Billing", "scopes": []string{"panel:read"}})},
+		"/api-keys":                         gin.H{"get": apiOperation("Integrations", "List API key metadata for integration governance", "panel:read", nil), "post": apiOperation("Integrations", "Create scoped API key for third-party systems", "panel:write", gin.H{"name": "Billing", "scopes": []string{"panel:read"}, "expiresAt": "2026-12-31T00:00:00Z"})},
+		"/api-keys/{id}":                    gin.H{"patch": apiOperation("Integrations", "Update API key tenant, scopes, status, or expiry", "panel:write", gin.H{"status": "paused", "scopes": []string{"panel:read"}}, pathParam("id", "API key ID")), "delete": apiOperation("Integrations", "Revoke an API key without removing audit metadata", "panel:write", nil, pathParam("id", "API key ID"))},
 		"/api-docs":                         gin.H{"get": apiOperation("Integrations", "Read OpenAPI document", "panel:read", nil)},
 		"/copilot/incidents":                gin.H{"get": apiOperation("Copilot", "List Copilot incidents", "panel:read", nil)},
 		"/copilot/ask":                      gin.H{"post": apiOperation("Copilot", "Ask AI operations Copilot", "panel:write", gin.H{"question": "Why is my Agent degraded?"})},

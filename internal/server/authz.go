@@ -20,6 +20,10 @@ func (h Handler) authenticateAPIKey(c *gin.Context, token string) bool {
 		c.AbortWithStatusJSON(401, gin.H{"error": "invalid api key"})
 		return true
 	}
+	if key.ExpiresAt != nil && time.Now().UTC().After(*key.ExpiresAt) {
+		c.AbortWithStatusJSON(401, gin.H{"error": "api key expired"})
+		return true
+	}
 	scopes := stringListFromJSON(key.Scopes)
 	nodeAccess := []string{"*"}
 	if key.TenantID != "" {
@@ -31,7 +35,11 @@ func (h Handler) authenticateAPIKey(c *gin.Context, token string) bool {
 		nodeAccess = stringListFromJSON(tenant.NodeAccess)
 	}
 	now := time.Now().UTC()
-	_ = h.db.Model(&models.APIKey{}).Where("id = ?", key.ID).Update("last_used_at", &now).Error
+	_ = h.db.Model(&models.APIKey{}).Where("id = ?", key.ID).Updates(map[string]any{
+		"last_used_at":         &now,
+		"last_used_ip":         c.ClientIP(),
+		"last_used_user_agent": c.Request.UserAgent(),
+	}).Error
 	c.Set("actor", key.ID)
 	c.Set("authKind", "api")
 	c.Set("tenantID", key.TenantID)

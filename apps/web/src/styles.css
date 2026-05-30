@@ -2165,6 +2165,7 @@ td span {
 }
 
 .control-form input,
+.control-form select,
 .control-form textarea {
   width: 100%;
   min-height: 40px;
@@ -2184,6 +2185,95 @@ td span {
 .control-form .full-span,
 .control-form button {
   grid-column: 1 / -1;
+}
+
+.access-scope-picker,
+.scope-picker {
+  grid-column: 1 / -1;
+  min-width: 0;
+  border: 1px solid #dbe3ee;
+  border-radius: 8px;
+  padding: 10px;
+  background: #ffffff;
+}
+
+.access-scope-picker legend,
+.scope-picker legend {
+  padding: 0 6px;
+  color: #475569;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.access-scope-summary {
+  display: grid;
+  gap: 3px;
+  margin-bottom: 9px;
+}
+
+.access-scope-summary strong {
+  color: #0f172a;
+  font-size: 13px;
+}
+
+.access-scope-summary span {
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.access-scope-options,
+.scope-picker > div {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.access-scope-options button,
+.scope-picker button {
+  display: grid;
+  grid-column: auto;
+  gap: 3px;
+  min-width: 0;
+  min-height: 58px;
+  border: 1px solid #dbe3ee;
+  border-radius: 8px;
+  padding: 8px 10px;
+  color: #334155;
+  background: #f8fafc;
+  text-align: left;
+}
+
+.access-scope-options button.selected,
+.scope-picker button.selected {
+  border-color: #0f766e;
+  color: #0f766e;
+  background: #ecfdf5;
+  box-shadow: 0 0 0 1px rgba(15, 118, 110, 0.12);
+}
+
+.access-scope-options strong,
+.scope-picker strong {
+  overflow: hidden;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.access-scope-options span,
+.scope-picker span,
+.scope-picker em {
+  overflow: hidden;
+  color: #64748b;
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.scope-picker button {
+  min-height: 72px;
 }
 
 .nested-forms {
@@ -2560,6 +2650,99 @@ td span {
   background: #f8fafc;
 }
 
+.api-key-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.api-key-card {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 12px;
+  background: #ffffff;
+}
+
+.api-key-card-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: start;
+}
+
+.api-key-card-head > div,
+.api-key-meta {
+  display: grid;
+  min-width: 0;
+}
+
+.api-key-card-head strong,
+.api-key-card-head span,
+.api-key-meta strong,
+.api-key-meta span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.api-key-card-head strong,
+.api-key-meta strong {
+  color: #0f172a;
+  font-size: 13px;
+}
+
+.api-key-card-head span,
+.api-key-meta span {
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.api-key-meta {
+  grid-template-columns: 86px minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: #f8fafc;
+}
+
+.api-key-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.ghost-button.danger {
+  color: #be123c;
+  border-color: rgba(190, 18, 60, 0.3);
+  background: #fff1f2;
+}
+
+.api-key-skeleton span,
+.api-key-skeleton strong,
+.api-key-skeleton em {
+  display: block;
+  height: 12px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #e2e8f0, #f8fafc, #e2e8f0);
+  background-size: 200% 100%;
+  animation: skeleton 1.2s ease-in-out infinite;
+}
+
+.api-key-skeleton strong {
+  width: 70%;
+  height: 18px;
+}
+
+.api-key-skeleton em {
+  width: 48%;
+}
+
 .incident-list p {
   display: -webkit-box;
   overflow: hidden;
@@ -2588,7 +2771,8 @@ td span {
 
 @media (max-width: 1180px) {
   .kpi-grid,
-  .agent-grid {
+  .agent-grid,
+  .api-key-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
@@ -2668,8 +2852,11 @@ td span {
 
   .kpi-grid,
   .agent-grid,
+  .api-key-grid,
   .dispatch-form,
   .control-form,
+  .access-scope-options,
+  .scope-picker > div,
   .signal-stack,
   .control-banner-metrics {
     grid-template-columns: 1fr;
@@ -2927,6 +3114,9 @@ html[data-theme="dark"] .view-heading,
 html[data-theme="dark"] .user-chip,
 html[data-theme="dark"] .mode-switch,
 html[data-theme="dark"] .ghost-button,
+html[data-theme="dark"] .access-scope-picker,
+html[data-theme="dark"] .scope-picker,
+html[data-theme="dark"] .api-key-card,
 html[data-theme="dark"] .icon-button {
   border-color: rgb(148 163 184 / 20%);
   color: #e5edf7;
@@ -2965,10 +3155,20 @@ html[data-theme="dark"] .node-inspector-list button,
 html[data-theme="dark"] .node-inspector-detail,
 html[data-theme="dark"] .node-inspector-empty,
 html[data-theme="dark"] .node-inspector-metrics > div,
-html[data-theme="dark"] .node-inspector-sections > div {
+html[data-theme="dark"] .node-inspector-sections > div,
+html[data-theme="dark"] .access-scope-options button,
+html[data-theme="dark"] .scope-picker button,
+html[data-theme="dark"] .api-key-meta {
   border-color: rgb(148 163 184 / 18%);
   color: #e5edf7;
   background: rgb(15 23 42 / 78%);
+}
+
+html[data-theme="dark"] .access-scope-options button.selected,
+html[data-theme="dark"] .scope-picker button.selected {
+  border-color: rgb(45 212 191 / 42%);
+  color: #99f6e4;
+  background: rgb(19 78 74 / 42%);
 }
 
 html[data-theme="dark"] .subscription-card,
@@ -3009,7 +3209,10 @@ html[data-theme="dark"] .yaml-preview,
 html[data-theme="dark"] .tenant-card-head strong,
 html[data-theme="dark"] .tenant-meter strong,
 html[data-theme="dark"] .tenant-metric-box strong,
-html[data-theme="dark"] .tenant-user-strip strong {
+html[data-theme="dark"] .tenant-user-strip strong,
+html[data-theme="dark"] .access-scope-summary strong,
+html[data-theme="dark"] .api-key-card-head strong,
+html[data-theme="dark"] .api-key-meta strong {
   color: #e5edf7;
 }
 
@@ -3023,7 +3226,13 @@ html[data-theme="dark"] .tenant-meter span,
 html[data-theme="dark"] .tenant-card-stats span,
 html[data-theme="dark"] .tenant-metric-box span,
 html[data-theme="dark"] .tenant-policy-line > span,
-html[data-theme="dark"] .tenant-user-strip span {
+html[data-theme="dark"] .tenant-user-strip span,
+html[data-theme="dark"] .access-scope-summary span,
+html[data-theme="dark"] .access-scope-options span,
+html[data-theme="dark"] .scope-picker span,
+html[data-theme="dark"] .scope-picker em,
+html[data-theme="dark"] .api-key-card-head span,
+html[data-theme="dark"] .api-key-meta span {
   color: #94a3b8;
 }
 
