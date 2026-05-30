@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/cshaizhihao/OU-UI/internal/agentruntime"
@@ -197,11 +198,47 @@ func (e Executor) deployNode(task Task) Result {
 		return failWithRollback(string(provider.DeployStageHealth), err, applyResult)
 	}
 	result["stages"] = stages
+	trafficRegistered, registerErr := e.registerManagedNode(payload, applyResult, healthResult)
+	result["trafficRegistered"] = trafficRegistered
+	if registerErr != nil {
+		result["trafficRegistryError"] = registerErr.Error()
+		return Result{
+			Status: models.TaskStatusSucceeded,
+			Result: result,
+			Logs:   "node deploy completed; traffic registry warning: " + registerErr.Error(),
+		}
+	}
 	return Result{
 		Status: models.TaskStatusSucceeded,
 		Result: result,
 		Logs:   "node deploy completed",
 	}
+}
+
+func (e Executor) registerManagedNode(payload deployPayload, applyResult provider.ApplyResult, healthResult provider.HealthResult) (bool, error) {
+	serviceName := firstNonEmpty(healthResult.ServiceName, applyResult.ServiceName)
+	if strings.TrimSpace(payload.NodeID) == "" || strings.TrimSpace(serviceName) == "" {
+		return false, agentruntime.ErrManagedNodeMissingIdentity
+	}
+	return true, agentruntime.UpsertManagedNode(e.DataDir, agentruntime.ManagedNodeRef{
+		NodeID:      payload.NodeID,
+		Name:        payload.NodeID,
+		Runtime:     string(payload.Spec.Runtime),
+		Protocol:    payload.Spec.Protocol,
+		Port:        payload.Spec.Port,
+		ServiceName: serviceName,
+		ConfigPath:  applyResult.ConfigPath,
+	})
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 func failed(stage string, err error) Result {

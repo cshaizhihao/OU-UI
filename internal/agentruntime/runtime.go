@@ -6,6 +6,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -21,17 +22,17 @@ type SystemInfo struct {
 }
 
 type RuntimeMetrics struct {
-	UptimeSeconds uint64  `json:"uptimeSeconds"`
-	CPUPercent    float64 `json:"cpuPercent"`
-	MemoryUsed    uint64  `json:"memoryUsed"`
-	MemoryTotal   uint64  `json:"memoryTotal"`
-	SwapUsed      uint64  `json:"swapUsed"`
-	SwapTotal     uint64  `json:"swapTotal"`
-	NetRxBytes    uint64  `json:"netRxBytes"`
-	NetTxBytes    uint64  `json:"netTxBytes"`
-	NetRxRateBps  uint64  `json:"netRxRateBps"`
-	NetTxRateBps  uint64  `json:"netTxRateBps"`
-	CollectedAt   string  `json:"collectedAt"`
+	UptimeSeconds uint64              `json:"uptimeSeconds"`
+	CPUPercent    float64             `json:"cpuPercent"`
+	MemoryUsed    uint64              `json:"memoryUsed"`
+	MemoryTotal   uint64              `json:"memoryTotal"`
+	SwapUsed      uint64              `json:"swapUsed"`
+	SwapTotal     uint64              `json:"swapTotal"`
+	NetRxBytes    uint64              `json:"netRxBytes"`
+	NetTxBytes    uint64              `json:"netTxBytes"`
+	NetRxRateBps  uint64              `json:"netRxRateBps"`
+	NetTxRateBps  uint64              `json:"netTxRateBps"`
+	CollectedAt   string              `json:"collectedAt"`
 	NodeTraffic   []NodeTrafficMetric `json:"nodeTraffic"`
 }
 
@@ -47,18 +48,29 @@ type NodeTrafficMetric struct {
 }
 
 type Sampler struct {
-	lastCPU cpuTimes
-	hasCPU  bool
-	lastRx  uint64
-	lastTx  uint64
-	lastAt  time.Time
+	mu               sync.Mutex
+	dataDir          string
+	lastCPU          cpuTimes
+	hasCPU           bool
+	lastRx           uint64
+	lastTx           uint64
+	lastAt           time.Time
+	lastNodeCounters map[string]nodeCounter
+	lastManagedNodes []ManagedNodeRef
 }
 
 func NewSampler() *Sampler {
-	return &Sampler{}
+	return NewSamplerWithDataDir("")
+}
+
+func NewSamplerWithDataDir(dataDir string) *Sampler {
+	return &Sampler{dataDir: dataDir, lastNodeCounters: map[string]nodeCounter{}}
 }
 
 func (s *Sampler) Collect() RuntimeMetrics {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	metrics := CollectRuntimeMetrics()
 	now := time.Now()
 	rx, tx := metrics.NetRxBytes, metrics.NetTxBytes
@@ -85,6 +97,7 @@ func (s *Sampler) Collect() RuntimeMetrics {
 	s.lastRx = rx
 	s.lastTx = tx
 	s.lastAt = now
+	metrics.NodeTraffic = s.collectNodeTraffic(now)
 	return metrics
 }
 

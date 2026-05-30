@@ -20,14 +20,14 @@ const (
 )
 
 type RuntimeManager struct {
-	RuntimeName  string
-	BinaryNames  []string
-	ServiceName  string
+	RuntimeName   string
+	BinaryNames   []string
+	ServiceName   string
 	ServicePrefix string
-	ConfigExt    string
-	TCPHealth    bool
-	ServiceMode  string
-	CommandArgs  []string
+	ConfigExt     string
+	TCPHealth     bool
+	ServiceMode   string
+	CommandArgs   []string
 }
 
 type runtimeLayout struct {
@@ -303,6 +303,7 @@ ExecStart=%s
 Restart=on-failure
 RestartSec=3
 LimitNOFILE=1048576
+IPAccounting=true
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectHome=read-only

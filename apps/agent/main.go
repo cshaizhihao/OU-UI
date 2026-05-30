@@ -106,7 +106,7 @@ func main() {
 	ticker := time.NewTicker(*interval)
 	defer ticker.Stop()
 	executor := tasks.NewExecutor(*dataDir)
-	sampler := agentruntime.NewSampler()
+	sampler := agentruntime.NewSamplerWithDataDir(*dataDir)
 
 	for {
 		metrics := sampler.Collect()
