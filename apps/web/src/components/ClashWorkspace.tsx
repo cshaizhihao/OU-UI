@@ -1,13 +1,13 @@
 import { useState, type FormEvent } from "react";
 import { createClashProfile, type ClashProfile, type DashboardDTO } from "../api";
 import {
-  formatTime,
   MiniTable,
   NoticeRow,
   parseCSV,
   parseLines,
   SectionHeader,
   stringsTrim,
+  useFormatTime,
   ViewHeading
 } from "./ConsolePrimitives";
 
@@ -168,6 +168,7 @@ export function ClashWorkspace({ data, disabled = false, onRefresh }: ClashWorks
 }
 
 function ProfileList({ profiles }: { profiles: ClashProfile[] }) {
+  const formatTime = useFormatTime();
   return (
     <div className="profile-list">
       {profiles.slice(0, 8).map((profile) => (

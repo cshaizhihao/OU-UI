@@ -26,6 +26,8 @@ type RuntimeMetrics struct {
 	CPUPercent    float64             `json:"cpuPercent"`
 	MemoryUsed    uint64              `json:"memoryUsed"`
 	MemoryTotal   uint64              `json:"memoryTotal"`
+	DiskUsed      uint64              `json:"diskUsed"`
+	DiskTotal     uint64              `json:"diskTotal"`
 	SwapUsed      uint64              `json:"swapUsed"`
 	SwapTotal     uint64              `json:"swapTotal"`
 	NetRxBytes    uint64              `json:"netRxBytes"`
@@ -118,12 +120,15 @@ func CollectSystemInfo() SystemInfo {
 
 func CollectRuntimeMetrics() RuntimeMetrics {
 	memTotal, memAvailable, swapTotal, swapFree := readMemInfo()
+	diskUsed, diskTotal := readDiskUsage("/")
 	rx, tx := readNetDev()
 	return RuntimeMetrics{
 		UptimeSeconds: readUptime(),
 		CPUPercent:    0,
 		MemoryUsed:    subtract(memTotal, memAvailable),
 		MemoryTotal:   memTotal,
+		DiskUsed:      diskUsed,
+		DiskTotal:     diskTotal,
 		SwapUsed:      subtract(swapTotal, swapFree),
 		SwapTotal:     swapTotal,
 		NetRxBytes:    rx,

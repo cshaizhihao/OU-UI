@@ -211,7 +211,18 @@ func (h Handler) createAlert(severity, sourceType, sourceID, eventType, message 
 
 func (h Handler) listAlerts(c *gin.Context) {
 	var events []models.AlertEvent
-	if err := h.db.Order("created_at desc").Limit(limitFromQuery(c, 100)).Find(&events).Error; err != nil {
+	query := h.db.Order("created_at desc").Limit(limitFromQuery(c, 100))
+	if allowed, limited := nodeAccessFilter(c); limited {
+		tenantID := strings.TrimSpace(fmt.Sprint(mustContextValue(c, "tenantID")))
+		actor := strings.TrimSpace(fmt.Sprint(mustContextValue(c, "actor")))
+		query = query.Where(
+			"(source_type IN ? AND source_id IN ?) OR (source_type = ? AND source_id = ?) OR (source_type = ? AND source_id = ?)",
+			[]string{"agent", "node"}, allowed,
+			"tenant", tenantID,
+			"user", actor,
+		)
+	}
+	if err := query.Find(&events).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "query alerts failed"})
 		return
 	}
@@ -1856,7 +1867,16 @@ func shareQuery(proxy map[string]any, keys ...string) url.Values {
 
 func (h Handler) listTenants(c *gin.Context) {
 	var tenants []models.Tenant
-	if err := h.db.Order("updated_at desc").Find(&tenants).Error; err != nil {
+	query := h.db.Order("updated_at desc")
+	if !isOwner(c) {
+		tenantID := strings.TrimSpace(fmt.Sprint(mustContextValue(c, "tenantID")))
+		if tenantID == "" {
+			c.JSON(http.StatusOK, gin.H{"items": []models.Tenant{}})
+			return
+		}
+		query = query.Where("id = ?", tenantID)
+	}
+	if err := query.Find(&tenants).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "query tenants failed"})
 		return
 	}
@@ -1899,7 +1919,12 @@ func (h Handler) createTenant(c *gin.Context) {
 
 func (h Handler) listPanelUsers(c *gin.Context) {
 	var users []models.PanelUser
-	if err := h.db.Order("updated_at desc").Find(&users).Error; err != nil {
+	query := h.db.Order("updated_at desc")
+	if !isOwner(c) {
+		actor := strings.TrimSpace(fmt.Sprint(mustContextValue(c, "actor")))
+		query = query.Where("id = ?", actor)
+	}
+	if err := query.Find(&users).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "query users failed"})
 		return
 	}
@@ -1924,9 +1949,17 @@ func (h Handler) createPanelUser(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request"})
 		return
 	}
+	tenantID := strings.TrimSpace(req.TenantID)
+	if tenantID != "" {
+		var tenant models.Tenant
+		if err := h.db.Select("id").Where("id = ? AND status = ?", tenantID, "active").First(&tenant).Error; err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "tenant is not active"})
+			return
+		}
+	}
 	user := models.PanelUser{
 		ID:                  "usr_" + randomHex(8),
-		TenantID:            strings.TrimSpace(req.TenantID),
+		TenantID:            tenantID,
 		Username:            strings.TrimSpace(req.Username),
 		PasswordSHA:         hashSecret(req.Password),
 		Role:                defaultNonEmpty(req.Role, "operator"),
@@ -1957,13 +1990,25 @@ func (h Handler) createAPIKey(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request"})
 		return
 	}
+	tenantID := strings.TrimSpace(req.TenantID)
+	if tenantID != "" {
+		var tenant models.Tenant
+		if err := h.db.Select("id").Where("id = ? AND status = ?", tenantID, "active").First(&tenant).Error; err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "tenant is not active"})
+			return
+		}
+	}
+	scopes := compactStringList(req.Scopes)
+	if len(scopes) == 0 {
+		scopes = []string{"panel:read"}
+	}
 	rawKey := "ouak_" + randomHex(24)
 	key := models.APIKey{
 		ID:       "key_" + randomHex(8),
-		TenantID: strings.TrimSpace(req.TenantID),
+		TenantID: tenantID,
 		Name:     strings.TrimSpace(req.Name),
 		KeyHash:  hashSecret(rawKey),
-		Scopes:   mustJSON(req.Scopes),
+		Scopes:   mustJSON(scopes),
 		Status:   defaultNonEmpty(req.Status, "active"),
 	}
 	if err := h.db.Create(&key).Error; err != nil {
@@ -2120,7 +2165,12 @@ type copilotRequest struct {
 
 func (h Handler) listCopilotIncidents(c *gin.Context) {
 	var incidents []models.CopilotIncident
-	if err := h.db.Order("created_at desc").Limit(limitFromQuery(c, 50)).Find(&incidents).Error; err != nil {
+	query := h.db.Order("created_at desc").Limit(limitFromQuery(c, 50))
+	if !isOwner(c) {
+		actor := strings.TrimSpace(fmt.Sprint(mustContextValue(c, "actor")))
+		query = query.Where("context LIKE ?", "%\"actor\":\""+actor+"\"%")
+	}
+	if err := query.Find(&incidents).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "query copilot incidents failed"})
 		return
 	}
@@ -2133,7 +2183,7 @@ func (h Handler) askCopilot(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request"})
 		return
 	}
-	context := h.collectCopilotContext(req.Context)
+	context := h.collectCopilotContext(c, req.Context)
 	answer := h.localCopilotAnswer(req.Question, context)
 	status := "local"
 	model := "ou-ui-rulebook"
@@ -2158,18 +2208,52 @@ func (h Handler) askCopilot(c *gin.Context) {
 	c.JSON(http.StatusOK, incident)
 }
 
-func (h Handler) collectCopilotContext(extra map[string]any) map[string]any {
+func (h Handler) collectCopilotContext(c *gin.Context, extra map[string]any) map[string]any {
+	actor := strings.TrimSpace(fmt.Sprint(mustContextValue(c, "actor")))
+	tenantID := strings.TrimSpace(fmt.Sprint(mustContextValue(c, "tenantID")))
+	role := strings.TrimSpace(fmt.Sprint(mustContextValue(c, "role")))
+	allowed, limited := nodeAccessFilter(c)
 	var alerts []models.AlertEvent
-	_ = h.db.Order("created_at desc").Limit(10).Find(&alerts).Error
+	alertQuery := h.db.Order("created_at desc").Limit(10)
+	if limited {
+		alertQuery = alertQuery.Where(
+			"(source_type IN ? AND source_id IN ?) OR (source_type = ? AND source_id = ?) OR (source_type = ? AND source_id = ?)",
+			[]string{"agent", "node"}, allowed,
+			"tenant", tenantID,
+			"user", actor,
+		)
+	}
+	_ = alertQuery.Find(&alerts).Error
 	var tasks []models.Task
-	_ = h.db.Order("created_at desc").Limit(10).Find(&tasks).Error
+	taskQuery := h.db.Order("created_at desc").Limit(10)
+	if limited {
+		taskQuery = taskQuery.Where("agent_id IN ?", allowed)
+	}
+	_ = taskQuery.Find(&tasks).Error
+	for i := range tasks {
+		tasks[i].Payload = redactJSON(tasks[i].Payload)
+		tasks[i].Result = redactJSON(tasks[i].Result)
+	}
 	var agents []models.Agent
-	_ = h.db.Order("updated_at desc").Limit(20).Find(&agents).Error
+	agentQuery := h.db.Order("updated_at desc").Limit(20)
+	if limited {
+		agentQuery = agentQuery.Where("id IN ?", allowed)
+	}
+	_ = agentQuery.Find(&agents).Error
 	for i := range agents {
 		h.decorateAgent(&agents[i])
 		agents[i].AgentTokenSHA = ""
 	}
-	return map[string]any{"extra": extra, "alerts": alerts, "tasks": tasks, "agents": agents}
+	return map[string]any{
+		"actor":      actor,
+		"tenantId":   tenantID,
+		"role":       role,
+		"nodeAccess": allowed,
+		"extra":      extra,
+		"alerts":     alerts,
+		"tasks":      tasks,
+		"agents":     agents,
+	}
 }
 
 func (h Handler) localCopilotAnswer(question string, context map[string]any) string {
@@ -2578,7 +2662,7 @@ func fetchText(rawURL string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	req.Header.Set("User-Agent", "OU-UI/3.0 subscription importer")
+	req.Header.Set("User-Agent", "OU-UI/4.0 subscription importer")
 	resp, err := (&http.Client{Timeout: 20 * time.Second}).Do(req)
 	if err != nil {
 		return "", err

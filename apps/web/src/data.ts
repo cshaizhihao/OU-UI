@@ -212,7 +212,15 @@ export type Agent = {
   runtime: RuntimeRef;
   ip: string;
   cpu: number;
+  cpuCores?: number;
   memory: number;
+  diskUsedGb?: number;
+  diskTotalGb?: number;
+  diskPercent?: number;
+  uptimeSeconds?: number;
+  latencyMs?: number;
+  lossPercent?: number;
+  expiresInDays?: number | null;
   uplinkMbps: number;
   downlinkMbps: number;
   usedTrafficGb: number;
@@ -381,7 +389,15 @@ export const agents: Agent[] = [
     runtime: "Xray",
     ip: "10.18.4.21",
     cpu: 34,
+    cpuCores: 4,
     memory: 58,
+    diskUsedGb: 138,
+    diskTotalGb: 320,
+    diskPercent: 43,
+    uptimeSeconds: 518400,
+    latencyMs: 25,
+    lossPercent: 0,
+    expiresInDays: 359,
     uplinkMbps: 182,
     downlinkMbps: 416,
     usedTrafficGb: 684,
@@ -461,7 +477,15 @@ export const agents: Agent[] = [
     runtime: "Hysteria2",
     ip: "10.21.9.44",
     cpu: 51,
+    cpuCores: 8,
     memory: 64,
+    diskUsedGb: 284,
+    diskTotalGb: 512,
+    diskPercent: 55,
+    uptimeSeconds: 259200,
+    latencyMs: 42,
+    lossPercent: 0.1,
+    expiresInDays: null,
     uplinkMbps: 236,
     downlinkMbps: 528,
     usedTrafficGb: 921,
@@ -541,7 +565,15 @@ export const agents: Agent[] = [
     runtime: "Xray",
     ip: "10.30.7.18",
     cpu: 76,
+    cpuCores: 4,
     memory: 72,
+    diskUsedGb: 441,
+    diskTotalGb: 512,
+    diskPercent: 86,
+    uptimeSeconds: 91200,
+    latencyMs: 78,
+    lossPercent: 1.8,
+    expiresInDays: 27,
     uplinkMbps: 91,
     downlinkMbps: 204,
     usedTrafficGb: 1036,
@@ -625,7 +657,15 @@ export const agents: Agent[] = [
     runtime: "Hysteria2",
     ip: "10.42.2.11",
     cpu: 0,
+    cpuCores: 2,
     memory: 0,
+    diskUsedGb: 219,
+    diskTotalGb: 256,
+    diskPercent: 86,
+    uptimeSeconds: 0,
+    latencyMs: undefined,
+    lossPercent: 100,
+    expiresInDays: 6,
     uplinkMbps: 0,
     downlinkMbps: 0,
     usedTrafficGb: 438,

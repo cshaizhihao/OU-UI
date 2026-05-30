@@ -12,11 +12,11 @@ import {
   type WebhookEndpoint
 } from "../api";
 import {
-  formatTime,
   MiniTable,
   NoticeRow,
   parseCSV,
   SectionHeader,
+  useFormatTime,
   ViewHeading
 } from "./ConsolePrimitives";
 
@@ -218,6 +218,7 @@ export function OperationsWorkspace({ data, disabled = false, onRefresh }: Opera
 }
 
 function AlertList({ alerts }: { alerts: AlertEvent[] }) {
+  const formatTime = useFormatTime();
   return (
     <section className="panel">
       <SectionHeader eyebrow="告警事件" title="最近投递状态" />

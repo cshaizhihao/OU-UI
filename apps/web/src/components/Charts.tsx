@@ -1,5 +1,12 @@
 import * as echarts from "echarts/core";
-import { GridComponent, TooltipComponent, type GridComponentOption, type TooltipComponentOption } from "echarts/components";
+import {
+  GridComponent,
+  LegendComponent,
+  TooltipComponent,
+  type GridComponentOption,
+  type LegendComponentOption,
+  type TooltipComponentOption
+} from "echarts/components";
 import { LineChart, type LineSeriesOption } from "echarts/charts";
 import { CanvasRenderer } from "echarts/renderers";
 import { useEffect, useMemo, useRef } from "react";
@@ -7,22 +14,24 @@ import type { NodeTraffic } from "../api";
 import type { Agent } from "../data";
 import { useLocale } from "./ConsolePrimitives";
 
-echarts.use([GridComponent, TooltipComponent, LineChart, CanvasRenderer]);
+echarts.use([GridComponent, LegendComponent, TooltipComponent, LineChart, CanvasRenderer]);
 
-type ChartOption = echarts.ComposeOption<GridComponentOption | TooltipComponentOption | LineSeriesOption>;
+type ChartOption = echarts.ComposeOption<GridComponentOption | LegendComponentOption | TooltipComponentOption | LineSeriesOption>;
 
 type AnalyticsPanelProps = {
   agents: Agent[];
+  selectedNodeId?: string;
   traffic: NodeTraffic[];
 };
 
-export function AnalyticsPanel({ agents, traffic }: AnalyticsPanelProps) {
+export function AnalyticsPanel({ agents, selectedNodeId, traffic }: AnalyticsPanelProps) {
   const language = useLocale();
   const chartRef = useRef<HTMLDivElement>(null);
   const series = useMemo(() => buildTrafficSeries(agents, traffic), [agents, traffic]);
-  const peak = Math.max(...series.values, 1);
-  const activeNodes = new Set(traffic.map((item) => item.nodeId)).size || agents.length;
-  const totalMbps = series.values.at(-1) ?? 0;
+  const peak = Math.max(...series.rxValues, ...series.txValues, 1);
+  const activeNodes = selectedNodeId ? 1 : new Set(traffic.map((item) => item.nodeId)).size || agents.length;
+  const totalMbps = (series.rxValues.at(-1) ?? 0) + (series.txValues.at(-1) ?? 0);
+  const currentConnections = series.connections.at(-1) ?? traffic.at(0)?.connections ?? 0;
 
   useEffect(() => {
     if (!chartRef.current) {
@@ -30,7 +39,14 @@ export function AnalyticsPanel({ agents, traffic }: AnalyticsPanelProps) {
     }
     const chart = echarts.init(chartRef.current, undefined, { renderer: "canvas" });
     const option: ChartOption = {
-      grid: { left: 10, right: 16, top: 18, bottom: 18, containLabel: true },
+      grid: { left: 10, right: 16, top: 44, bottom: 18, containLabel: true },
+      legend: {
+        top: 4,
+        right: 8,
+        itemWidth: 18,
+        itemHeight: 8,
+        textStyle: { color: "#64748b", fontWeight: 800 }
+      },
       tooltip: {
         trigger: "axis",
         backgroundColor: "rgba(15, 23, 42, 0.92)",
@@ -55,7 +71,7 @@ export function AnalyticsPanel({ agents, traffic }: AnalyticsPanelProps) {
       },
       series: [
         {
-          name: language === "zh" ? "吞吐量" : "Throughput",
+          name: language === "zh" ? "上传速率" : "Upload rate",
           type: "line",
           smooth: 0.42,
           symbol: "circle",
@@ -90,7 +106,32 @@ export function AnalyticsPanel({ agents, traffic }: AnalyticsPanelProps) {
               ]
             }
           },
-          data: series.values
+          data: series.rxValues
+        },
+        {
+          name: language === "zh" ? "下载速率" : "Download rate",
+          type: "line",
+          smooth: 0.42,
+          symbol: "circle",
+          symbolSize: 7,
+          showSymbol: false,
+          lineStyle: {
+            width: 3,
+            color: {
+              type: "linear",
+              x: 0,
+              y: 0,
+              x2: 1,
+              y2: 0,
+              colorStops: [
+                { offset: 0, color: "#f59e0b" },
+                { offset: 0.58, color: "#f43f5e" },
+                { offset: 1, color: "#8b5cf6" }
+              ]
+            }
+          },
+          areaStyle: { color: "rgba(244, 63, 94, 0.08)" },
+          data: series.txValues
         }
       ]
     };
@@ -101,14 +142,22 @@ export function AnalyticsPanel({ agents, traffic }: AnalyticsPanelProps) {
       window.removeEventListener("resize", onResize);
       chart.dispose();
     };
-  }, [peak, series]);
+  }, [language, peak, series]);
 
   return (
     <section className="panel chart-panel" id="metrics">
       <div className="section-heading">
         <div>
           <p className="eyebrow">{language === "zh" ? "可观测性" : "Observability"}</p>
-          <h2>{language === "zh" ? "流量波形与运行压力" : "Traffic wave and runtime pressure"}</h2>
+          <h2>
+            {language === "zh"
+              ? selectedNodeId
+                ? "单节点波形与连接压力"
+                : "流量波形与运行压力"
+              : selectedNodeId
+                ? "Single-node wave and connection pressure"
+                : "Traffic wave and runtime pressure"}
+          </h2>
         </div>
         <select aria-label="Time range">
           <option>{language === "zh" ? "最近 12 个样本" : "Last 12 samples"}</option>
@@ -118,11 +167,16 @@ export function AnalyticsPanel({ agents, traffic }: AnalyticsPanelProps) {
       </div>
       <div className="traffic-wave-grid">
         <div className="traffic-wave-card">
-          <div ref={chartRef} className="traffic-wave" aria-label="ECharts traffic waveform" />
+          <div
+            ref={chartRef}
+            className="traffic-wave"
+            aria-label={language === "zh" ? "单节点流量波形图" : "Per-node traffic waveform"}
+          />
         </div>
         <div className="signal-stack">
           <SignalMetric label={language === "zh" ? "当前" : "Current"} value={`${totalMbps.toFixed(1)} Mbps`} />
           <SignalMetric label={language === "zh" ? "峰值" : "Peak"} value={`${peak.toFixed(1)} Mbps`} />
+          <SignalMetric label={language === "zh" ? "连接" : "Connections"} value={String(currentConnections)} />
           <SignalMetric label={language === "zh" ? "来源" : "Sources"} value={String(activeNodes)} />
         </div>
       </div>
@@ -144,13 +198,17 @@ function buildTrafficSeries(agents: Agent[], traffic: NodeTraffic[]) {
   if (samples.length > 0) {
     return {
       labels: samples.map((item) => shortTime(item.collectedAt)),
-      values: samples.map((item) => bytesPerSecondToMbps(item.rxRateBps + item.txRateBps))
+      rxValues: samples.map((item) => bytesPerSecondToMbps(item.rxRateBps)),
+      txValues: samples.map((item) => bytesPerSecondToMbps(item.txRateBps)),
+      connections: samples.map((item) => item.connections)
     };
   }
   const fallback = agents.slice(0, 12);
   return {
     labels: fallback.map((agent) => agent.name),
-    values: fallback.map((agent) => agent.uplinkMbps + agent.downlinkMbps)
+    rxValues: fallback.map((agent) => agent.uplinkMbps),
+    txValues: fallback.map((agent) => agent.downlinkMbps),
+    connections: fallback.map((agent) => agent.queue)
   };
 }
 

@@ -168,7 +168,7 @@ func (h Handler) quotaUsage(nodeAccess []string) (uint64, int, map[string]uint64
 }
 
 func authorizePanelRequest(c *gin.Context) bool {
-	if role, _ := c.Get("role"); strings.EqualFold(strings.TrimSpace(fmt.Sprint(role)), "owner") {
+	if isOwner(c) {
 		return true
 	}
 	required := "panel:read"
@@ -187,6 +187,21 @@ func authorizePanelRequest(c *gin.Context) bool {
 		return false
 	}
 	return scopeAllows(scopes, required)
+}
+
+func requireOwnerRole() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if !isOwner(c) {
+			c.AbortWithStatusJSON(403, gin.H{"error": "owner role is required"})
+			return
+		}
+		c.Next()
+	}
+}
+
+func isOwner(c *gin.Context) bool {
+	role, _ := c.Get("role")
+	return strings.EqualFold(strings.TrimSpace(fmt.Sprint(role)), "owner")
 }
 
 func mustContextValue(c *gin.Context, key string) any {

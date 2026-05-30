@@ -252,7 +252,7 @@ export function Shell({
                 onClick={() => onLanguageChange("zh")}
                 type="button"
               >
-                中
+                {language === "zh" ? "中" : "ZH"}
               </button>
               <button
                 className={language === "en" ? "selected" : ""}
@@ -262,12 +262,20 @@ export function Shell({
                 EN
               </button>
               <button
-                aria-label={theme === "dark" ? "切换白天模式" : "切换黑夜模式"}
+                aria-label={
+                  language === "zh"
+                    ? theme === "dark"
+                      ? "切换白天模式"
+                      : "切换黑夜模式"
+                    : theme === "dark"
+                      ? "Switch to light mode"
+                      : "Switch to dark mode"
+                }
                 className="theme-toggle"
                 onClick={() => onThemeChange(theme === "dark" ? "light" : "dark")}
                 type="button"
               >
-                {theme === "dark" ? "日" : "夜"}
+                {language === "zh" ? (theme === "dark" ? "日" : "夜") : theme === "dark" ? "Light" : "Dark"}
               </button>
             </div>
             {user ? (
@@ -280,7 +288,7 @@ export function Shell({
               <span>{language === "zh" ? "搜索" : "Search"}</span>
               <input placeholder={language === "zh" ? "Agent、节点、任务或租户" : "Agent, node, task, or tenant"} />
             </label>
-            <button className="icon-button" aria-label="通知">
+            <button className="icon-button" aria-label={language === "zh" ? "通知" : "Notifications"}>
               !
             </button>
             <button className="ghost-button" onClick={onLogout} type="button">

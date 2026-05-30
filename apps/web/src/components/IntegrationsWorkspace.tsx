@@ -1,13 +1,13 @@
 import { useState, type FormEvent } from "react";
 import { askCopilot, createAPIKey, type ControlTask, type DashboardDTO } from "../api";
 import {
-  formatTime,
   isAPIKeyResponse,
   MiniTable,
   NoticeRow,
   parseCSV,
   SectionHeader,
   taskTone,
+  useFormatTime,
   ViewHeading
 } from "./ConsolePrimitives";
 
@@ -18,6 +18,7 @@ type IntegrationsWorkspaceProps = {
 };
 
 export function IntegrationsWorkspace({ data, disabled = false, onRefresh }: IntegrationsWorkspaceProps) {
+  const formatTime = useFormatTime();
   const [busy, setBusy] = useState("");
   const [message, setMessage] = useState("");
   const [apiKey, setApiKey] = useState("");

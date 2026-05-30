@@ -507,12 +507,18 @@ function toAgentView(agent: BackendAgent): Agent {
   const metrics = plainObject(agent.lastMetrics);
   const memoryTotal = numberValue(metrics.memoryTotal) || numberValue(agent.memoryTotal);
   const memoryUsed = numberValue(metrics.memoryUsed);
+  const diskUsed = firstNumber(metrics.diskUsed, metrics.diskUsedBytes, metrics.disk_used_bytes);
+  const diskTotal = firstNumber(metrics.diskTotal, metrics.diskTotalBytes, metrics.disk_total_bytes);
+  const uptimeSeconds = numberValue(metrics.uptimeSeconds);
+  const latencyMs = optionalNumber(metrics.latencyMs ?? metrics.latency_ms);
+  const lossPercent = optionalNumber(metrics.lossPercent ?? metrics.loss_percent);
   const rxRate = numberValue(metrics.netRxRateBps);
   const txRate = numberValue(metrics.netTxRateBps);
   const rxBytes = numberValue(metrics.netRxBytes);
   const txBytes = numberValue(metrics.netTxBytes);
   const capabilities = stringArray(agent.capabilities);
   const status = normalizeStatus(agent.status);
+  const lastSeenAt = agent.lastSeenAt || agent.updatedAt || "";
   return {
     id: agent.id,
     name: agent.name || agent.hostname || agent.id,
@@ -520,16 +526,24 @@ function toAgentView(agent: BackendAgent): Agent {
     status,
     runtime: runtimeFromCapabilities(capabilities),
     ip: agent.publicIp || agent.hostname || "unreported",
+    cpuCores: numberValue(agent.cpuCount) || undefined,
     cpu: Math.round(numberValue(metrics.cpuPercent)),
     memory: memoryTotal > 0 ? Math.round((memoryUsed * 100) / memoryTotal) : 0,
+    diskUsedGb: bytesToGb(diskUsed),
+    diskTotalGb: bytesToGb(diskTotal),
+    diskPercent: diskTotal > 0 ? Math.round((diskUsed * 100) / diskTotal) : undefined,
+    uptimeSeconds: uptimeSeconds || undefined,
+    latencyMs: latencyMs !== undefined && latencyMs > 0 ? latencyMs : undefined,
+    lossPercent: lossPercent !== undefined && lossPercent >= 0 ? lossPercent : undefined,
     uplinkMbps: Math.round((txRate * 8) / 1_000_000),
     downlinkMbps: Math.round((rxRate * 8) / 1_000_000),
     usedTrafficGb: Math.round((rxBytes + txBytes) / 1024 / 1024 / 1024),
     quotaTrafficGb: Math.round(numberValue(agent.trafficLimit) / 1024 / 1024 / 1024),
     queue: numberValue(agent.queue),
-    updatedAt: relativeTime(agent.lastSeenAt || agent.updatedAt),
+    updatedAt: lastSeenAt,
     authStatus: agent.authStatus,
-    lastHeartbeat: relativeTime(agent.lastSeenAt),
+    lastHeartbeat: relativeTime(lastSeenAt),
+    lastHeartbeatAt: lastSeenAt,
     runtimeCapabilities: capabilities,
     runtimeVersion: agent.version || "Agent runtime",
     serviceStatus: status === "online" ? "running" : status,
@@ -568,6 +582,34 @@ function numberValue(value: unknown): number {
     return Number.isFinite(parsed) ? parsed : 0;
   }
   return 0;
+}
+
+function firstNumber(...values: unknown[]): number {
+  for (const value of values) {
+    const parsed = numberValue(value);
+    if (Number.isFinite(parsed) && parsed > 0) {
+      return parsed;
+    }
+  }
+  return 0;
+}
+
+function optionalNumber(value: unknown): number | undefined {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+  if (typeof value === "string" && value.trim() !== "") {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : undefined;
+  }
+  return undefined;
+}
+
+function bytesToGb(value: number): number | undefined {
+  if (!Number.isFinite(value) || value <= 0) {
+    return undefined;
+  }
+  return Math.round(value / 1024 / 1024 / 1024);
 }
 
 function stringArray(value: unknown): string[] {

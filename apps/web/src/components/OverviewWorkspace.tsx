@@ -1,14 +1,14 @@
 import type { DashboardDTO } from "../api";
 import type { Agent } from "../data";
+import { ProbeAgentCards } from "./AgentViews";
 import {
   formatBytes,
   formatServiceStatus,
-  formatTime,
   KpiGrid,
   MiniTable,
   SectionHeader,
-  StatusTag,
   taskTone,
+  useFormatTime,
   ViewHeading
 } from "./ConsolePrimitives";
 
@@ -19,6 +19,7 @@ type OverviewWorkspaceProps = {
 };
 
 export function OverviewWorkspace({ agents, data, onRefresh }: OverviewWorkspaceProps) {
+  const formatTime = useFormatTime();
   const control = data?.control;
   const trafficBytes =
     control?.traffic.reduce((sum, item) => sum + item.rxBytes + item.txBytes, 0) ?? 0;
@@ -53,66 +54,51 @@ export function OverviewWorkspace({ agents, data, onRefresh }: OverviewWorkspace
         ]}
       />
 
-      <div className="workspace-grid two">
-        <section className="panel">
-          <SectionHeader eyebrow="Agent" title="控制面状态" />
-          <div className="compact-agent-list">
-            {agents.slice(0, 6).map((agent) => (
-              <article key={agent.id}>
-                <div>
-                  <strong>{agent.name}</strong>
-                  <span>{agent.region || agent.ip}</span>
-                </div>
-                <StatusTag tone={agent.status === "online" ? "ok" : agent.status === "degraded" ? "warning" : "danger"}>
-                  {formatServiceStatus(agent.status)}
-                </StatusTag>
-              </article>
-            ))}
-            {agents.length === 0 ? <p className="empty-state">暂无 Agent 数据</p> : null}
-          </div>
-        </section>
-
-        <section className="panel">
-          <SectionHeader eyebrow="任务" title="最近执行队列" />
-          <div className="task-list">
-            {(control?.tasks ?? []).slice(0, 5).map((task) => {
-              const tone = taskTone(task.status);
-              return (
-                <article className="task-item" key={task.id}>
-                  <div className="task-item-head">
-                    <div>
-                      <strong>{task.type}</strong>
-                      <span>{task.agentId || "未绑定 Agent"}</span>
+      <div className="overview-command-grid">
+        <ProbeAgentCards agents={agents.slice(0, 6)} />
+        <div className="overview-side-rail">
+          <section className="panel">
+            <SectionHeader eyebrow="任务" title="最近执行队列" />
+            <div className="task-list">
+              {(control?.tasks ?? []).slice(0, 5).map((task) => {
+                const tone = taskTone(task.status);
+                return (
+                  <article className="task-item" key={task.id}>
+                    <div className="task-item-head">
+                      <div>
+                        <strong>{task.type}</strong>
+                        <span>{task.agentId || "未绑定 Agent"}</span>
+                      </div>
+                      <small>{formatTime(task.updatedAt ?? task.createdAt)}</small>
                     </div>
-                    <small>{formatTime(task.updatedAt ?? task.createdAt)}</small>
-                  </div>
-                  <div className="progress">
-                    <span className={`progress-${tone}`} style={{ width: tone === "success" || tone === "failed" ? "100%" : "48%" }} />
-                  </div>
-                  <div className="task-meta">
-                    <span>{task.id}</span>
-                    <span className={`task-state task-state-${tone}`}>{formatServiceStatus(task.status)}</span>
-                  </div>
-                </article>
-              );
-            })}
-            {(control?.tasks.length ?? 0) === 0 ? <p className="empty-state">暂无任务</p> : null}
-          </div>
-        </section>
-      </div>
+                    <div className="progress">
+                      <span className={`progress-${tone}`} style={{ width: tone === "success" || tone === "failed" ? "100%" : "48%" }} />
+                    </div>
+                    <div className="task-meta">
+                      <span>{task.id}</span>
+                      <span className={`task-state task-state-${tone}`}>{formatServiceStatus(task.status)}</span>
+                    </div>
+                  </article>
+                );
+              })}
+              {(control?.tasks.length ?? 0) === 0 ? <p className="empty-state">暂无任务</p> : null}
+            </div>
+          </section>
 
-      <section className="panel">
-        <SectionHeader eyebrow="告警" title="最新事件" />
-        <MiniTable
-          columns={["事件", "来源", "状态", "时间"]}
-          rows={(control?.alerts ?? []).slice(0, 6).map((alert) => [
-            alert.eventType,
-            `${alert.sourceType}:${alert.sourceId}`,
-            alert.delivered ? "已投递" : alert.lastError || "待处理",
-            formatTime(alert.createdAt)
-          ])}
-        />
-      </section>
+          <section className="panel">
+            <SectionHeader eyebrow="告警" title="最新事件" />
+            <MiniTable
+              columns={["事件", "来源", "状态", "时间"]}
+              rows={(control?.alerts ?? []).slice(0, 6).map((alert) => [
+                alert.eventType,
+                `${alert.sourceType}:${alert.sourceId}`,
+                alert.delivered ? "已投递" : alert.lastError || "待处理",
+                formatTime(alert.createdAt)
+              ])}
+            />
+          </section>
+        </div>
+      </div>
     </div>
   );
 }

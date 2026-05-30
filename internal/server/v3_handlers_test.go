@@ -713,6 +713,181 @@ func TestPanelUserRBACFiltersOverviewAndEnforcesNodeQuota(t *testing.T) {
 	}
 }
 
+func TestPanelUserCannotCreateTenantsUsersOrAPIKeys(t *testing.T) {
+	db := openTestDB(t)
+	cfg := config.ServerConfig{
+		SecurePath:               "/ou-ui",
+		AdminUser:                "admin",
+		AdminPassword:            "password",
+		JWTSecret:                "test-secret",
+		AgentJoinToken:           "join",
+		AgentOfflineAfterSeconds: 45,
+	}
+	if err := db.Create(&models.Tenant{
+		ID:         "ten_rbac",
+		Name:       "RBAC",
+		Status:     "active",
+		Role:       "operator",
+		NodeAccess: datatypes.JSON(`["agt_allowed"]`),
+	}).Error; err != nil {
+		t.Fatalf("seed tenant: %v", err)
+	}
+	if err := db.Create(&models.PanelUser{
+		ID:          "usr_rbac",
+		TenantID:    "ten_rbac",
+		Username:    "subuser",
+		PasswordSHA: hashSecret("secret"),
+		Role:        "operator",
+		Status:      "active",
+	}).Error; err != nil {
+		t.Fatalf("seed panel user: %v", err)
+	}
+	router := NewRouter(cfg, db)
+
+	loginReq := httptest.NewRequest(http.MethodPost, "/ou-ui/api/v1/auth/login", bytes.NewBufferString(`{"username":"subuser","password":"secret"}`))
+	loginReq.Header.Set("Content-Type", "application/json")
+	loginResp := httptest.NewRecorder()
+	router.ServeHTTP(loginResp, loginReq)
+	if loginResp.Code != http.StatusOK {
+		t.Fatalf("expected subuser login, got %d: %s", loginResp.Code, loginResp.Body.String())
+	}
+	var loginBody struct {
+		Token string `json:"token"`
+	}
+	if err := json.Unmarshal(loginResp.Body.Bytes(), &loginBody); err != nil || loginBody.Token == "" {
+		t.Fatalf("decode login token: %v %q", err, loginResp.Body.String())
+	}
+
+	for _, tc := range []struct {
+		name string
+		path string
+		body string
+	}{
+		{name: "tenant", path: "/ou-ui/api/v1/tenants", body: `{"name":"New Tenant"}`},
+		{name: "user", path: "/ou-ui/api/v1/users", body: `{"username":"operator","password":"secret"}`},
+		{name: "api-key", path: "/ou-ui/api/v1/api-keys", body: `{"name":"Key","scopes":["panel:read"]}`},
+	} {
+		req := httptest.NewRequest(http.MethodPost, tc.path, bytes.NewBufferString(tc.body))
+		req.Header.Set("Authorization", "Bearer "+loginBody.Token)
+		req.Header.Set("Content-Type", "application/json")
+		resp := httptest.NewRecorder()
+		router.ServeHTTP(resp, req)
+		if resp.Code != http.StatusForbidden {
+			t.Fatalf("expected %s creation to be forbidden, got %d: %s", tc.name, resp.Code, resp.Body.String())
+		}
+	}
+
+	tenantsReq := httptest.NewRequest(http.MethodGet, "/ou-ui/api/v1/tenants", nil)
+	tenantsReq.Header.Set("Authorization", "Bearer "+loginBody.Token)
+	tenantsResp := httptest.NewRecorder()
+	router.ServeHTTP(tenantsResp, tenantsReq)
+	if tenantsResp.Code != http.StatusOK || !strings.Contains(tenantsResp.Body.String(), "ten_rbac") {
+		t.Fatalf("expected filtered tenant list, got %d: %s", tenantsResp.Code, tenantsResp.Body.String())
+	}
+}
+
+func TestCopilotContextIsFilteredByTenantAndNodeAccess(t *testing.T) {
+	db := openTestDB(t)
+	cfg := config.ServerConfig{
+		SecurePath:               "/ou-ui",
+		AdminUser:                "admin",
+		AdminPassword:            "password",
+		JWTSecret:                "test-secret",
+		AgentJoinToken:           "join",
+		AgentOfflineAfterSeconds: 45,
+	}
+	now := time.Now().UTC()
+	agents := []models.Agent{
+		{ID: "agt_allowed", Name: "Allowed", Status: models.AgentStatusOnline, AuthStatus: models.AgentAuthActive, LastSeenAt: &now, Capabilities: datatypes.JSON(`["task-polling"]`), AgentTokenSHA: hashSecret("allowed")},
+		{ID: "agt_denied", Name: "Denied", Status: models.AgentStatusOnline, AuthStatus: models.AgentAuthActive, LastSeenAt: &now, Capabilities: datatypes.JSON(`["task-polling"]`), AgentTokenSHA: hashSecret("denied")},
+	}
+	if err := db.Create(&agents).Error; err != nil {
+		t.Fatalf("seed agents: %v", err)
+	}
+	if err := db.Create(&models.NodeTrafficSample{NodeID: "nod_allowed", AgentID: "agt_allowed", RxBytes: 10, TxBytes: 5, Connections: 1, CollectedAt: now}).Error; err != nil {
+		t.Fatalf("seed traffic: %v", err)
+	}
+	if err := db.Create(&models.Task{ID: "tsk_allowed", AgentID: "agt_allowed", Type: models.TaskTypeNoop, Status: models.TaskStatusSucceeded, Payload: datatypes.JSON(`{"ok":true}`)}).Error; err != nil {
+		t.Fatalf("seed task: %v", err)
+	}
+	if err := db.Create(&models.Task{ID: "tsk_denied", AgentID: "agt_denied", Type: models.TaskTypeNoop, Status: models.TaskStatusSucceeded, Payload: datatypes.JSON(`{"ok":false}`)}).Error; err != nil {
+		t.Fatalf("seed task denied: %v", err)
+	}
+	if err := db.Create(&models.AlertEvent{ID: "alr_allowed", Severity: "warning", SourceType: "agent", SourceID: "agt_allowed", EventType: "agent.error", Message: "Allowed alert"}).Error; err != nil {
+		t.Fatalf("seed alert: %v", err)
+	}
+	if err := db.Create(&models.AlertEvent{ID: "alr_denied", Severity: "warning", SourceType: "agent", SourceID: "agt_denied", EventType: "agent.error", Message: "Denied alert"}).Error; err != nil {
+		t.Fatalf("seed alert denied: %v", err)
+	}
+	if err := db.Create(&models.Tenant{
+		ID:         "ten_copilot",
+		Name:       "Copilot",
+		Status:     "active",
+		Role:       "operator",
+		NodeAccess: datatypes.JSON(`["agt_allowed"]`),
+	}).Error; err != nil {
+		t.Fatalf("seed tenant: %v", err)
+	}
+	if err := db.Create(&models.PanelUser{
+		ID:          "usr_copilot",
+		TenantID:    "ten_copilot",
+		Username:    "subuser",
+		PasswordSHA: hashSecret("secret"),
+		Role:        "operator",
+		Status:      "active",
+	}).Error; err != nil {
+		t.Fatalf("seed panel user: %v", err)
+	}
+	router := NewRouter(cfg, db)
+
+	loginReq := httptest.NewRequest(http.MethodPost, "/ou-ui/api/v1/auth/login", bytes.NewBufferString(`{"username":"subuser","password":"secret"}`))
+	loginReq.Header.Set("Content-Type", "application/json")
+	loginResp := httptest.NewRecorder()
+	router.ServeHTTP(loginResp, loginReq)
+	if loginResp.Code != http.StatusOK {
+		t.Fatalf("expected subuser login, got %d: %s", loginResp.Code, loginResp.Body.String())
+	}
+	var loginBody struct {
+		Token string `json:"token"`
+	}
+	if err := json.Unmarshal(loginResp.Body.Bytes(), &loginBody); err != nil || loginBody.Token == "" {
+		t.Fatalf("decode login token: %v %q", err, loginResp.Body.String())
+	}
+
+	askBody := bytes.NewBufferString(`{"question":"what is wrong?","context":{"hint":"check traffic"}}`)
+	askReq := httptest.NewRequest(http.MethodPost, "/ou-ui/api/v1/copilot/ask", askBody)
+	askReq.Header.Set("Authorization", "Bearer "+loginBody.Token)
+	askReq.Header.Set("Content-Type", "application/json")
+	askResp := httptest.NewRecorder()
+	router.ServeHTTP(askResp, askReq)
+	if askResp.Code != http.StatusOK {
+		t.Fatalf("expected copilot answer, got %d: %s", askResp.Code, askResp.Body.String())
+	}
+	var incident models.CopilotIncident
+	if err := json.Unmarshal(askResp.Body.Bytes(), &incident); err != nil {
+		t.Fatalf("decode copilot incident: %v", err)
+	}
+	var context map[string]any
+	if err := json.Unmarshal(incident.Context, &context); err != nil {
+		t.Fatalf("decode copilot context: %v", err)
+	}
+	agentsCtx, _ := context["agents"].([]any)
+	if len(agentsCtx) != 1 {
+		t.Fatalf("expected one allowed agent in copilot context, got %+v", context["agents"])
+	}
+	if !strings.Contains(string(incident.Context), "agt_allowed") || strings.Contains(string(incident.Context), "agt_denied") {
+		t.Fatalf("expected copilot context to be tenant filtered, got %s", string(incident.Context))
+	}
+	tasksCtx, _ := context["tasks"].([]any)
+	if len(tasksCtx) != 1 || !strings.Contains(string(incident.Context), "tsk_allowed") || strings.Contains(string(incident.Context), "tsk_denied") {
+		t.Fatalf("expected tasks to be tenant filtered, got %s", string(incident.Context))
+	}
+	alertsCtx, _ := context["alerts"].([]any)
+	if len(alertsCtx) != 1 || !strings.Contains(string(incident.Context), "alr_allowed") || strings.Contains(string(incident.Context), "alr_denied") {
+		t.Fatalf("expected alerts to be tenant filtered, got %s", string(incident.Context))
+	}
+}
+
 func openTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 	db, err := store.Open(filepath.Join(t.TempDir(), "ou-ui-test.db"))

@@ -1,7 +1,7 @@
 import type { DashboardDTO } from "../api";
 import type { Agent } from "../data";
 import { protocolOptions, runtimeOptions } from "../data";
-import { AgentCards, AgentTable } from "./AgentViews";
+import { AgentTable, ProbeAgentCards } from "./AgentViews";
 import { formatServiceStatus, KpiGrid, MiniTable, SectionHeader, ViewHeading } from "./ConsolePrimitives";
 
 type NodeManagementWorkspaceProps = {
@@ -80,7 +80,7 @@ export function NodeManagementWorkspace({ agents, data }: NodeManagementWorkspac
         </form>
       </section>
 
-      <AgentCards agents={agents} />
+      <ProbeAgentCards agents={agents} />
 
       <section className="panel">
         <SectionHeader eyebrow="托管节点" title="节点健康" />
