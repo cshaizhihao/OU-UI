@@ -1977,30 +1977,28 @@ func (h Handler) createAPIKey(c *gin.Context) {
 func (h Handler) apiDocs(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"openapi": "3.1.0",
-		"info":    gin.H{"title": "OU-UI REST API", "version": "v3.0.0"},
-		"servers": []gin.H{{"url": h.cfg.SecurePath + "/api/v1"}},
-		"paths": gin.H{
-			"/agents":                           gin.H{"get": gin.H{"summary": "List agents"}},
-			"/agents/{id}/network-optimization": gin.H{"post": gin.H{"summary": "Queue BBR/sysctl host optimization"}},
-			"/nodes":                            gin.H{"get": gin.H{"summary": "List managed nodes"}, "post": gin.H{"summary": "Create managed node"}},
-			"/traffic/nodes":                    gin.H{"get": gin.H{"summary": "List latest per-node traffic samples"}},
-			"/routing/rules":                    gin.H{"get": gin.H{"summary": "List routing rules"}, "post": gin.H{"summary": "Create routing rule"}},
-			"/routing/apply":                    gin.H{"post": gin.H{"summary": "Queue routing.apply tasks for capable Agents"}},
-			"/load-balancers":                   gin.H{"get": gin.H{"summary": "List HA groups"}, "post": gin.H{"summary": "Create HA group"}},
-			"/load-balancers/{id}/entry":        gin.H{"get": gin.H{"summary": "Resolve the current HA entry decision"}},
-			"/load-balancers/{id}/health":       gin.H{"post": gin.H{"summary": "Update HA member latency, loss, and health"}},
-			"/webhooks":                         gin.H{"get": gin.H{"summary": "List alert webhooks"}, "post": gin.H{"summary": "Create alert webhook"}},
-			"/webhooks/{id}":                    gin.H{"patch": gin.H{"summary": "Update alert webhook"}},
-			"/webhooks/{id}/test":               gin.H{"post": gin.H{"summary": "Send test alert through a webhook"}},
-			"/alerts":                           gin.H{"get": gin.H{"summary": "List alert events and delivery status"}},
-			"/subscriptions":                    gin.H{"get": gin.H{"summary": "List external subscriptions"}, "post": gin.H{"summary": "Create external subscription"}},
-			"/subscriptions/aggregate":          gin.H{"get": gin.H{"summary": "Generate aggregated Clash, V2Ray, raw share, or Sing-box subscriptions"}},
-			"/clash/profiles":                   gin.H{"get": gin.H{"summary": "List Clash profiles"}, "post": gin.H{"summary": "Create Clash profile"}},
-			"/tenants":                          gin.H{"get": gin.H{"summary": "List tenants"}, "post": gin.H{"summary": "Create tenant"}},
-			"/users":                            gin.H{"get": gin.H{"summary": "List panel users"}, "post": gin.H{"summary": "Create panel user"}},
-			"/api-keys":                         gin.H{"post": gin.H{"summary": "Create API key"}},
-			"/copilot/ask":                      gin.H{"post": gin.H{"summary": "Ask AI operations copilot"}},
+		"info": gin.H{
+			"title":       "OU-UI REST API",
+			"version":     "v4.0.0",
+			"description": "Authenticated control-plane API for OU-UI agents, generated proxy nodes, routing, HA, alerts, subscriptions, RBAC, API keys, and Copilot operations.",
 		},
+		"servers":  []gin.H{{"url": h.cfg.SecurePath + "/api/v1", "description": "Current panel secure-path API root"}},
+		"security": []gin.H{{"bearerAuth": []string{}}},
+		"tags": []gin.H{
+			{"name": "Auth"}, {"name": "Agents"}, {"name": "Nodes"}, {"name": "Traffic"},
+			{"name": "Routing"}, {"name": "High Availability"}, {"name": "Alerts"},
+			{"name": "Subscriptions"}, {"name": "Clash"}, {"name": "RBAC"}, {"name": "Integrations"}, {"name": "Copilot"},
+		},
+		"components": gin.H{
+			"securitySchemes": gin.H{
+				"bearerAuth": gin.H{"type": "http", "scheme": "bearer", "bearerFormat": "JWT or OU-UI API key"},
+			},
+			"schemas": gin.H{
+				"ListResponse": gin.H{"type": "object", "properties": gin.H{"items": gin.H{"type": "array", "items": gin.H{"type": "object"}}}},
+				"Error":        gin.H{"type": "object", "properties": gin.H{"error": gin.H{"type": "string"}}},
+			},
+		},
+		"paths": openAPIPaths(),
 		"x-ou-ui-alert-events": []string{
 			"cpu.high",
 			"cpu.overload",
@@ -2011,8 +2009,108 @@ func (h Handler) apiDocs(c *gin.Context) {
 			"node.connections.high",
 			"agent.offline",
 			"agent.error",
+			"tenant.quota.exceeded",
+			"tenant.node.quota.exceeded",
+			"user.quota.exceeded",
+			"user.node.quota.exceeded",
 		},
+		"x-ou-ui-scopes": []string{"panel:read", "panel:write", "panel:*", "*"},
 	})
+}
+
+func openAPIPaths() gin.H {
+	return gin.H{
+		"/auth/login":                       gin.H{"post": apiOperation("Auth", "Create a panel session token", "panel:read", gin.H{"username": "admin", "password": "secret"})},
+		"/overview":                         gin.H{"get": apiOperation("Agents", "Read tenant-filtered control-plane overview", "panel:read", nil)},
+		"/agents":                           gin.H{"get": apiOperation("Agents", "List visible Agents", "panel:read", nil)},
+		"/agents/install-script":            gin.H{"get": apiOperation("Agents", "Render the Agent install script", "panel:read", nil)},
+		"/agents/{id}/network-optimization": gin.H{"post": apiOperation("Agents", "Queue BBR/sysctl host optimization", "panel:write", gin.H{"profile": "bbr-v3", "rebootPolicy": "manual"}, pathParam("id", "Agent ID"))},
+		"/nodes":                            gin.H{"get": apiOperation("Nodes", "List visible generated proxy nodes", "panel:read", nil), "post": apiOperation("Nodes", "Create a managed proxy node and deployment task", "panel:write", gin.H{"agentId": "agt_x", "runtime": "xray", "protocol": "vless", "port": 443})},
+		"/traffic/nodes":                    gin.H{"get": apiOperation("Traffic", "List latest per-node traffic samples", "panel:read", nil)},
+		"/traffic/nodes/{id}/samples":       gin.H{"get": apiOperation("Traffic", "List historical samples for one node", "panel:read", nil, pathParam("id", "Node ID"), queryParam("limit", "Maximum samples"))},
+		"/routing/rules":                    gin.H{"get": apiOperation("Routing", "List routing rules", "panel:read", nil), "post": apiOperation("Routing", "Create GeoIP/GeoSite/domain/protocol routing rule", "panel:write", gin.H{"name": "Block ads", "ruleType": "ads", "match": "category-ads-all", "action": "block"})},
+		"/routing/rules/{id}":               gin.H{"patch": apiOperation("Routing", "Update a routing rule", "panel:write", gin.H{"enabled": true}, pathParam("id", "Routing rule ID")), "delete": apiOperation("Routing", "Delete a routing rule", "panel:write", nil, pathParam("id", "Routing rule ID"))},
+		"/routing/apply":                    gin.H{"post": apiOperation("Routing", "Queue routing.apply tasks for capable Agents", "panel:write", gin.H{"agentIds": []string{"agt_x"}})},
+		"/routing/export/xray":              gin.H{"get": apiOperation("Routing", "Export Xray routing config", "panel:read", nil)},
+		"/load-balancers":                   gin.H{"get": apiOperation("High Availability", "List HA groups", "panel:read", nil), "post": apiOperation("High Availability", "Create HA group", "panel:write", gin.H{"name": "Global HA", "entryTag": "ou-ha", "strategy": "latency-loss"})},
+		"/load-balancers/{id}/entry":        gin.H{"get": apiOperation("High Availability", "Resolve current HA entry decision", "panel:read", nil, pathParam("id", "Load balancer group ID"))},
+		"/load-balancers/{id}/health":       gin.H{"post": apiOperation("High Availability", "Update HA member health metrics", "panel:write", gin.H{"members": []gin.H{}}, pathParam("id", "Load balancer group ID"))},
+		"/webhooks":                         gin.H{"get": apiOperation("Alerts", "List alert webhooks", "panel:read", nil), "post": apiOperation("Alerts", "Create Telegram, ServerChan, or generic webhook", "panel:write", gin.H{"name": "Ops", "kind": "telegram", "eventTypes": []string{"agent.offline"}})},
+		"/webhooks/{id}":                    gin.H{"patch": apiOperation("Alerts", "Update alert webhook", "panel:write", gin.H{"enabled": true}, pathParam("id", "Webhook ID"))},
+		"/webhooks/{id}/test":               gin.H{"post": apiOperation("Alerts", "Send webhook test alert", "panel:write", nil, pathParam("id", "Webhook ID"))},
+		"/alerts":                           gin.H{"get": apiOperation("Alerts", "List alert events and delivery status", "panel:read", nil)},
+		"/subscriptions":                    gin.H{"get": apiOperation("Subscriptions", "List external subscriptions", "panel:read", nil), "post": apiOperation("Subscriptions", "Create and optionally import external subscription", "panel:write", gin.H{"name": "External pool", "url": "https://example.com/sub", "format": "auto"})},
+		"/subscriptions/{id}/import":        gin.H{"post": apiOperation("Subscriptions", "Import one external subscription", "panel:write", gin.H{"content": "vmess://..."}, pathParam("id", "Subscription ID"))},
+		"/subscriptions/aggregate":          gin.H{"get": apiOperation("Subscriptions", "Generate aggregated Clash, V2Ray, raw share, or Sing-box subscription", "panel:read", nil, queryParam("format", "clash, v2ray, raw, or sing-box"))},
+		"/external-nodes":                   gin.H{"get": apiOperation("Subscriptions", "List imported external nodes", "panel:read", nil, queryParam("subscriptionId", "Optional subscription filter"))},
+		"/clash/profiles":                   gin.H{"get": apiOperation("Clash", "List Clash profiles", "panel:read", nil), "post": apiOperation("Clash", "Create hosted Clash YAML profile", "panel:write", gin.H{"name": "OU-UI Clash", "ruleProviders": []gin.H{}, "proxyGroups": []gin.H{}, "selectedNodes": []string{"*"}})},
+		"/clash/profiles/{id}.yaml":         gin.H{"get": apiOperation("Clash", "Download hosted Clash profile YAML", "panel:read", nil, pathParam("id", "Clash profile ID"))},
+		"/tenants":                          gin.H{"get": apiOperation("RBAC", "List tenants", "panel:read", nil), "post": apiOperation("RBAC", "Create tenant with node and quota limits", "panel:write", gin.H{"name": "Ops", "nodeAccess": []string{"agt_x"}, "monthlyTrafficQuota": 1073741824, "perNodeTrafficQuota": 268435456, "maxConnections": 1000})},
+		"/users":                            gin.H{"get": apiOperation("RBAC", "List sub-users", "panel:read", nil), "post": apiOperation("RBAC", "Create panel sub-user", "panel:write", gin.H{"username": "operator", "password": "change-me", "tenantId": "ten_x"})},
+		"/api-keys":                         gin.H{"post": apiOperation("Integrations", "Create scoped API key for third-party systems", "panel:write", gin.H{"name": "Billing", "scopes": []string{"panel:read"}})},
+		"/api-docs":                         gin.H{"get": apiOperation("Integrations", "Read OpenAPI document", "panel:read", nil)},
+		"/copilot/incidents":                gin.H{"get": apiOperation("Copilot", "List Copilot incidents", "panel:read", nil)},
+		"/copilot/ask":                      gin.H{"post": apiOperation("Copilot", "Ask AI operations Copilot", "panel:write", gin.H{"question": "Why is my Agent degraded?"})},
+		"/tasks":                            gin.H{"get": apiOperation("Agents", "List visible tasks", "panel:read", nil), "post": apiOperation("Agents", "Create a direct Agent task", "panel:write", gin.H{"agentId": "agt_x", "type": "noop"})},
+	}
+}
+
+func apiOperation(tag, summary, scope string, requestExample any, parameters ...gin.H) gin.H {
+	op := gin.H{
+		"tags":        []string{tag},
+		"summary":     summary,
+		"security":    []gin.H{{"bearerAuth": []string{scope}}},
+		"responses":   apiResponses(),
+		"x-ou-scope":  scope,
+		"operationId": operationID(summary),
+	}
+	if requestExample != nil {
+		op["requestBody"] = gin.H{
+			"required": true,
+			"content":  gin.H{"application/json": gin.H{"schema": gin.H{"type": "object"}, "example": requestExample}},
+		}
+	}
+	if len(parameters) > 0 {
+		op["parameters"] = parameters
+	}
+	return op
+}
+
+func apiResponses() gin.H {
+	return gin.H{
+		"200": gin.H{"description": "Successful response"},
+		"400": gin.H{"description": "Invalid request"},
+		"401": gin.H{"description": "Missing or invalid bearer token"},
+		"403": gin.H{"description": "Scope, tenant, node access, or quota denied"},
+	}
+}
+
+func pathParam(name, description string) gin.H {
+	return gin.H{"name": name, "in": "path", "required": true, "description": description, "schema": gin.H{"type": "string"}}
+}
+
+func queryParam(name, description string) gin.H {
+	return gin.H{"name": name, "in": "query", "required": false, "description": description, "schema": gin.H{"type": "string"}}
+}
+
+func operationID(summary string) string {
+	words := strings.FieldsFunc(summary, func(r rune) bool {
+		return r == ' ' || r == '-' || r == '/' || r == ','
+	})
+	for i, word := range words {
+		word = strings.TrimFunc(word, func(r rune) bool {
+			return r < '0' || (r > '9' && r < 'A') || (r > 'Z' && r < 'a') || r > 'z'
+		})
+		if word == "" {
+			continue
+		}
+		if i == 0 {
+			words[i] = strings.ToLower(word[:1]) + word[1:]
+		} else {
+			words[i] = strings.ToUpper(word[:1]) + word[1:]
+		}
+	}
+	return strings.Join(words, "")
 }
 
 type copilotRequest struct {

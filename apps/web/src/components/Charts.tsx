@@ -5,6 +5,7 @@ import { CanvasRenderer } from "echarts/renderers";
 import { useEffect, useMemo, useRef } from "react";
 import type { NodeTraffic } from "../api";
 import type { Agent } from "../data";
+import { useLocale } from "./ConsolePrimitives";
 
 echarts.use([GridComponent, TooltipComponent, LineChart, CanvasRenderer]);
 
@@ -16,6 +17,7 @@ type AnalyticsPanelProps = {
 };
 
 export function AnalyticsPanel({ agents, traffic }: AnalyticsPanelProps) {
+  const language = useLocale();
   const chartRef = useRef<HTMLDivElement>(null);
   const series = useMemo(() => buildTrafficSeries(agents, traffic), [agents, traffic]);
   const peak = Math.max(...series.values, 1);
@@ -53,7 +55,7 @@ export function AnalyticsPanel({ agents, traffic }: AnalyticsPanelProps) {
       },
       series: [
         {
-          name: "Throughput",
+          name: language === "zh" ? "吞吐量" : "Throughput",
           type: "line",
           smooth: 0.42,
           symbol: "circle",
@@ -105,13 +107,13 @@ export function AnalyticsPanel({ agents, traffic }: AnalyticsPanelProps) {
     <section className="panel chart-panel" id="metrics">
       <div className="section-heading">
         <div>
-          <p className="eyebrow">Observability</p>
-          <h2>Traffic wave and runtime pressure</h2>
+          <p className="eyebrow">{language === "zh" ? "可观测性" : "Observability"}</p>
+          <h2>{language === "zh" ? "流量波形与运行压力" : "Traffic wave and runtime pressure"}</h2>
         </div>
         <select aria-label="Time range">
-          <option>Last 12 samples</option>
-          <option>Last 24 samples</option>
-          <option>Last 7 days</option>
+          <option>{language === "zh" ? "最近 12 个样本" : "Last 12 samples"}</option>
+          <option>{language === "zh" ? "最近 24 个样本" : "Last 24 samples"}</option>
+          <option>{language === "zh" ? "最近 7 天" : "Last 7 days"}</option>
         </select>
       </div>
       <div className="traffic-wave-grid">
@@ -119,9 +121,9 @@ export function AnalyticsPanel({ agents, traffic }: AnalyticsPanelProps) {
           <div ref={chartRef} className="traffic-wave" aria-label="ECharts traffic waveform" />
         </div>
         <div className="signal-stack">
-          <SignalMetric label="Current" value={`${totalMbps.toFixed(1)} Mbps`} />
-          <SignalMetric label="Peak" value={`${peak.toFixed(1)} Mbps`} />
-          <SignalMetric label="Sources" value={String(activeNodes)} />
+          <SignalMetric label={language === "zh" ? "当前" : "Current"} value={`${totalMbps.toFixed(1)} Mbps`} />
+          <SignalMetric label={language === "zh" ? "峰值" : "Peak"} value={`${peak.toFixed(1)} Mbps`} />
+          <SignalMetric label={language === "zh" ? "来源" : "Sources"} value={String(activeNodes)} />
         </div>
       </div>
     </section>

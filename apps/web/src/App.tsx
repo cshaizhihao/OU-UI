@@ -7,7 +7,8 @@ import {
   type DashboardDTO,
   type SessionUser
 } from "./api";
-import { Shell } from "./components/Shell";
+import { LocaleProvider } from "./components/ConsolePrimitives";
+import { Shell, type Locale, type ThemeMode, type WorkspaceId } from "./components/Shell";
 import { DashboardPage } from "./pages/DashboardPage";
 import { LoginPage } from "./pages/LoginPage";
 
@@ -17,6 +18,9 @@ export function App() {
   const [loading, setLoading] = useState(Boolean(getStoredToken()));
   const [loginLoading, setLoginLoading] = useState(false);
   const [error, setError] = useState("");
+  const [activeWorkspace, setActiveWorkspace] = useState<WorkspaceId>("overview");
+  const [language, setLanguage] = useState<Locale>("zh");
+  const [theme, setTheme] = useState<ThemeMode>("dark");
 
   useEffect(() => {
     if (!getStoredToken()) {
@@ -24,6 +28,11 @@ export function App() {
     }
     void refreshDashboard();
   }, []);
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    document.documentElement.lang = language === "zh" ? "zh-Hans" : "en";
+  }, [language, theme]);
 
   async function refreshDashboard() {
     setLoading(true);
@@ -68,13 +77,25 @@ export function App() {
   }
 
   return (
-    <Shell onLogout={handleLogout} user={user}>
-      <DashboardPage
-        data={dashboard}
-        error={error}
-        loading={loading}
-        onRefresh={refreshDashboard}
-      />
+    <Shell
+      activeWorkspace={activeWorkspace}
+      language={language}
+      onLogout={handleLogout}
+      onLanguageChange={setLanguage}
+      onThemeChange={setTheme}
+      onWorkspaceChange={setActiveWorkspace}
+      theme={theme}
+      user={user}
+    >
+      <LocaleProvider language={language}>
+        <DashboardPage
+          activeWorkspace={activeWorkspace}
+          data={dashboard}
+          error={error}
+          loading={loading}
+          onRefresh={refreshDashboard}
+        />
+      </LocaleProvider>
     </Shell>
   );
 }

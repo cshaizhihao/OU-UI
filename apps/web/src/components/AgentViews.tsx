@@ -23,16 +23,16 @@ import type {
 import type { ReactNode } from "react";
 
 const statusLabel: Record<AgentStatus, string> = {
-  online: "Online",
-  degraded: "Degraded",
-  offline: "Offline"
+  online: "在线",
+  degraded: "降级",
+  offline: "离线"
 };
 
 const taskStatusLabel: Record<ControlTaskStatus, string> = {
-  pending: "pending",
-  running: "running",
-  success: "success",
-  failed: "failed"
+  pending: "等待中",
+  running: "执行中",
+  success: "成功",
+  failed: "失败"
 };
 
 type AgentViewsProps = {
@@ -44,10 +44,10 @@ export function AgentCards({ agents }: AgentViewsProps) {
     <section className="panel" id="agents">
       <div className="section-heading">
         <div>
-          <p className="eyebrow">Agent Monitor</p>
-          <h2>Proxy node monitor</h2>
+          <p className="eyebrow">Agent 监控</p>
+          <h2>代理节点监控</h2>
         </div>
-        <button className="ghost-button">Sync probes</button>
+        <button className="ghost-button">同步探测</button>
       </div>
       <div className="agent-grid">
         {agents.map((agent) => {
@@ -78,17 +78,17 @@ export function AgentCards({ agents }: AgentViewsProps) {
                 <span>{formatServiceStatus(runtimeApply.serviceStatus)}</span>
                 <span>{formatServiceMode(runtimeApply.serviceMode)}</span>
                 <span>{formatRuntimeManaged(runtimeApply.runtimeManaged)}</span>
-                <span>Queue {agent.queue}</span>
+                <span>队列 {agent.queue}</span>
               </div>
 
               <div className="control-summary" aria-label="Agent control chain">
-                <ControlDatum label="Registration">
+                <ControlDatum label="注册">
                   <ControlPill state={registration} />
                 </ControlDatum>
-                <ControlDatum label="Auth">
+                <ControlDatum label="认证">
                   <ControlPill state={auth} />
                 </ControlDatum>
-                <ControlDatum label="Last heartbeat" value={heartbeat} />
+                <ControlDatum label="最后心跳" value={heartbeat} />
               </div>
 
               <RuntimeServiceSummary apply={runtimeApply} />
@@ -96,15 +96,15 @@ export function AgentCards({ agents }: AgentViewsProps) {
 
               <div className="agent-task-summary">
                 <div>
-                  <span>Task</span>
+                  <span>任务</span>
                   <TaskStatePill status={task.status} />
                 </div>
                 <div>
-                  <span>Retries</span>
+                  <span>重试</span>
                   <strong>{task.retryCount}</strong>
                 </div>
                 {task.failureReason ? (
-                  <p className="failure-reason">Failure reason: {task.failureReason}</p>
+                  <p className="failure-reason">失败原因：{task.failureReason}</p>
                 ) : null}
               </div>
 
@@ -116,10 +116,10 @@ export function AgentCards({ agents }: AgentViewsProps) {
               </div>
 
               <div className="agent-metrics">
-                <Metric label="Uplink" value={`${agent.uplinkMbps} Mbps`} />
-                <Metric label="Downlink" value={`${agent.downlinkMbps} Mbps`} />
+                <Metric label="上传" value={`${agent.uplinkMbps} Mbps`} />
+                <Metric label="下载" value={`${agent.downlinkMbps} Mbps`} />
                 <Metric
-                  label="Traffic"
+                  label="流量"
                   value={`${agent.usedTrafficGb} / ${agent.quotaTrafficGb} GB`}
                 />
               </div>
@@ -135,11 +135,11 @@ export function AgentTable({ agents }: AgentViewsProps) {
   return (
     <section className="panel">
       <div className="section-heading compact">
-        <h2>Agent detail</h2>
+        <h2>Agent 明细</h2>
         <div className="segmented" aria-label="Agent status filter">
-          <button className="selected">All</button>
-          <button>Online</button>
-          <button>Issues</button>
+          <button className="selected">全部</button>
+          <button>在线</button>
+          <button>异常</button>
         </div>
       </div>
       <div className="table-wrap">
@@ -147,20 +147,20 @@ export function AgentTable({ agents }: AgentViewsProps) {
           <thead>
             <tr>
               <th>Agent</th>
-              <th>Status</th>
-              <th>Control</th>
-              <th>Runtime</th>
-              <th>Control stages</th>
-              <th>Host tuning</th>
-              <th>Unit / config</th>
-              <th>Service actions</th>
-              <th>Capabilities</th>
+              <th>状态</th>
+              <th>控制</th>
+              <th>运行时</th>
+              <th>部署阶段</th>
+              <th>主机调优</th>
+              <th>Unit / 配置</th>
+              <th>服务动作</th>
+              <th>能力</th>
               <th>CPU</th>
-              <th>Memory</th>
-              <th>Up / Down</th>
-              <th>Traffic quota</th>
-              <th>Heartbeat</th>
-              <th>Task</th>
+              <th>内存</th>
+              <th>上传 / 下载</th>
+              <th>流量配额</th>
+              <th>心跳</th>
+              <th>任务</th>
             </tr>
           </thead>
           <tbody>
@@ -211,9 +211,7 @@ export function AgentTable({ agents }: AgentViewsProps) {
                       <span title={runtimeApply.configDir}>{runtimeApply.configDir}</span>
                       <span title={runtimeApply.configPath}>{runtimeApply.configPath}</span>
                       <strong>
-                        {runtimeApply.rollbackAvailable
-                          ? "Rollback available"
-                          : "Rollback unavailable"}
+                        {runtimeApply.rollbackAvailable ? "可回滚" : "不可回滚"}
                       </strong>
                     </div>
                   </td>
@@ -235,7 +233,7 @@ export function AgentTable({ agents }: AgentViewsProps) {
                   <td>
                     <div className="task-cell">
                       <TaskStatePill status={task.status} />
-                      <span>Retries {task.retryCount}</span>
+                      <span>重试 {task.retryCount}</span>
                       {task.failureReason ? <em>{task.failureReason}</em> : null}
                     </div>
                   </td>
@@ -301,7 +299,7 @@ function HostTuningSummary({ tuning }: { tuning: HostTuningView }) {
     <div className="host-tuning-summary">
       <div className="host-tuning-head">
         <div>
-          <span>Host tuning / Network optimization</span>
+          <span>主机调优 / 网络优化</span>
           <strong>{hostTuneStageLabel[tuning.currentStage]}</strong>
         </div>
         <TaskStatePill status={tuning.status} />
@@ -309,14 +307,14 @@ function HostTuningSummary({ tuning }: { tuning: HostTuningView }) {
       <HostTunePipeline tuning={tuning} />
       <div className="host-tuning-meta">
         <RuntimeMeta label="BBR" value={`${tuning.bbrStatus} / ${tuning.bbrVersion}`} />
-        <RuntimeMeta label="Sysctl profile" value={tuning.sysctlProfile} />
-        <RuntimeMeta label="Kernel" value={tuning.kernelVersion} />
+        <RuntimeMeta label="Sysctl 配置" value={tuning.sysctlProfile} />
+        <RuntimeMeta label="内核" value={tuning.kernelVersion} />
         <RuntimeMeta
-          label="Congestion"
+          label="拥塞控制"
           value={`${tuning.currentCongestionControl} -> ${tuning.targetCongestionControl}`}
         />
-        <RuntimeMeta label="Reboot" value={tuning.rebootRequired ? "Required" : "Not required"} />
-        <RuntimeMeta label="One-click task" value={`${tuning.taskId} / ${tuning.eta}`} />
+        <RuntimeMeta label="重启" value={tuning.rebootRequired ? "需要" : "不需要"} />
+        <RuntimeMeta label="一键任务" value={`${tuning.taskId} / ${tuning.eta}`} />
         <HostTuneFailureStage stage={tuning.failureStage} />
       </div>
     </div>
@@ -328,7 +326,7 @@ function HostTuningTableCell({ tuning }: { tuning: HostTuningView }) {
     <div className="host-tuning-cell">
       <div className="host-tuning-cell-head">
         <TaskStatePill status={tuning.status} />
-        <span>{tuning.rebootRequired ? "Reboot required" : "No reboot"}</span>
+        <span>{tuning.rebootRequired ? "需要重启" : "无需重启"}</span>
       </div>
       <HostTunePipeline tuning={tuning} compact />
       <span>{tuning.bbrStatus}</span>
@@ -375,21 +373,21 @@ function RuntimeServiceSummary({ apply }: { apply: RuntimeApplyView }) {
     <div className="runtime-apply-summary">
       <div className="runtime-apply-head">
         <div>
-          <span>Service control</span>
+          <span>服务控制</span>
           <strong>{runtimeApplyStageLabel[apply.currentStage]}</strong>
         </div>
         <ServiceStatusPill status={apply.serviceStatus} />
       </div>
       <RuntimeApplyPipeline apply={apply} />
       <div className="runtime-apply-meta">
-        <RuntimeMeta label="Mode" value={formatServiceMode(apply.serviceMode)} />
-        <RuntimeMeta label="Managed" value={formatRuntimeManaged(apply.runtimeManaged)} />
+        <RuntimeMeta label="模式" value={formatServiceMode(apply.serviceMode)} />
+        <RuntimeMeta label="托管" value={formatRuntimeManaged(apply.runtimeManaged)} />
         <RuntimeMeta label="Unit" value={apply.unitPath} />
-        <RuntimeMeta label="Config dir" value={apply.configDir} />
-        <RuntimeMeta label="Config" value={apply.configPath} />
+        <RuntimeMeta label="配置目录" value={apply.configDir} />
+        <RuntimeMeta label="配置文件" value={apply.configPath} />
         <RuntimeMeta
-          label="Rollback"
-          value={apply.rollbackAvailable ? "Available" : "Unavailable"}
+          label="回滚"
+          value={apply.rollbackAvailable ? "可用" : "不可用"}
         />
         <RuntimeFailureStage stage={apply.failureStage} />
       </div>
@@ -409,7 +407,7 @@ function RuntimeControlSignals({
     <div className={`runtime-control-signals${compact ? " compact" : ""}`}>
       <RuntimeSignal label="Reload" status={apply.reloadStatus} detail={apply.reloadInfo} />
       <RuntimeSignal label="Restart" status={apply.restartStatus} detail={apply.restartInfo} />
-      <RuntimeSignal label="Health" status={apply.healthStatus} detail={apply.healthInfo} />
+      <RuntimeSignal label="健康" status={apply.healthStatus} detail={apply.healthInfo} />
     </div>
   );
 }
@@ -448,7 +446,7 @@ function RuntimeFailureStage({ stage }: { stage?: RuntimeApplyStage }) {
 
   return (
     <span className="failure-stage">
-      Failed at {runtimeApplyStageLabel[stage]}
+      失败阶段：{runtimeApplyStageLabel[stage]}
     </span>
   );
 }
@@ -460,7 +458,7 @@ function HostTuneFailureStage({ stage }: { stage?: HostTuneStage }) {
 
   return (
     <span className="failure-stage">
-      Failed at {hostTuneStageLabel[stage]}
+      失败阶段：{hostTuneStageLabel[stage]}
     </span>
   );
 }
@@ -506,7 +504,7 @@ function CapabilityList({
           ) : null}
         </>
       ) : (
-        <span className="capability-chip muted">Not reported</span>
+        <span className="capability-chip muted">未上报</span>
       )}
     </div>
   );
@@ -549,11 +547,11 @@ function formatServiceStatus(status: string): string {
 }
 
 function formatServiceMode(mode: string): string {
-  return `${formatServiceStatus(mode)} mode`;
+  return `${formatServiceStatus(mode)} 模式`;
 }
 
 function formatRuntimeManaged(managed: boolean): string {
-  return managed ? "OU-UI managed" : "External service";
+  return managed ? "OU-UI 托管" : "外部服务";
 }
 
 function getServiceTone(status: string): "ok" | "warning" | "danger" | "muted" | "info" {

@@ -573,6 +573,63 @@ func TestAPIKeyReadScopeCannotMutate(t *testing.T) {
 	}
 }
 
+func TestAPIDocsExposeOpenAPISecurityPathsAndScopes(t *testing.T) {
+	db := openTestDB(t)
+	cfg := config.ServerConfig{
+		SecurePath:     "/ou-ui",
+		AdminUser:      "admin",
+		AdminPassword:  "password",
+		JWTSecret:      "test-secret",
+		AgentJoinToken: "join",
+	}
+	const rawKey = "ouak_docs_read"
+	if err := db.Create(&models.APIKey{
+		ID:      "key_docs_read",
+		Name:    "Docs read",
+		KeyHash: hashSecret(rawKey),
+		Scopes:  datatypes.JSON(`["panel:read"]`),
+		Status:  "active",
+	}).Error; err != nil {
+		t.Fatalf("seed api key: %v", err)
+	}
+	router := NewRouter(cfg, db)
+
+	req := httptest.NewRequest(http.MethodGet, "/ou-ui/api/v1/api-docs", nil)
+	req.Header.Set("Authorization", "Bearer "+rawKey)
+	resp := httptest.NewRecorder()
+	router.ServeHTTP(resp, req)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected api docs response, got %d: %s", resp.Code, resp.Body.String())
+	}
+	var body map[string]any
+	if err := json.Unmarshal(resp.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode api docs: %v", err)
+	}
+	if body["openapi"] != "3.1.0" {
+		t.Fatalf("expected OpenAPI 3.1.0, got %+v", body["openapi"])
+	}
+	components := body["components"].(map[string]any)
+	securitySchemes := components["securitySchemes"].(map[string]any)
+	if _, ok := securitySchemes["bearerAuth"]; !ok {
+		t.Fatalf("expected bearerAuth security scheme, got %+v", securitySchemes)
+	}
+	paths := body["paths"].(map[string]any)
+	for _, path := range []string{"/subscriptions/aggregate", "/api-keys", "/copilot/ask", "/traffic/nodes/{id}/samples"} {
+		if _, ok := paths[path]; !ok {
+			t.Fatalf("expected path %s in api docs", path)
+		}
+	}
+	aggregate := paths["/subscriptions/aggregate"].(map[string]any)
+	getOp := aggregate["get"].(map[string]any)
+	if getOp["x-ou-scope"] != "panel:read" || getOp["operationId"] == "" {
+		t.Fatalf("expected aggregate operation scope and id, got %+v", getOp)
+	}
+	scopes := body["x-ou-ui-scopes"].([]any)
+	if len(scopes) == 0 {
+		t.Fatalf("expected documented OU-UI scopes")
+	}
+}
+
 func TestPanelUserRBACFiltersOverviewAndEnforcesNodeQuota(t *testing.T) {
 	db := openTestDB(t)
 	cfg := config.ServerConfig{

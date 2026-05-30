@@ -22,12 +22,12 @@ export function LoginPage({ loading = false, error = "", onLogin }: LoginPagePro
           <div className="brand-mark">OU</div>
           <div>
             <strong>OU-UI</strong>
-            <span>Node Control Console</span>
+            <span>节点运维控制台</span>
           </div>
         </div>
         <form aria-busy={loading} className="login-form" onSubmit={handleSubmit}>
           <label>
-            Username
+            用户名
             <input
               autoComplete="username"
               disabled={loading}
@@ -37,12 +37,12 @@ export function LoginPage({ loading = false, error = "", onLogin }: LoginPagePro
             />
           </label>
           <label>
-            Password
+            密码
             <input
               autoComplete="current-password"
               disabled={loading}
               onChange={(event) => setPassword(event.target.value)}
-              placeholder="Enter password"
+              placeholder="输入密码"
               type="password"
               value={password}
             />
@@ -51,22 +51,22 @@ export function LoginPage({ loading = false, error = "", onLogin }: LoginPagePro
           <div className="form-row">
             <label className="checkline">
               <input type="checkbox" defaultChecked disabled={loading} />
-              Keep signed in
+              保持登录
             </label>
-            <a href="#reset">Reset password</a>
+            <a href="#reset">重置密码</a>
           </div>
           <button className="primary-button" disabled={loading} type="submit">
-            {loading ? "Signing in" : "Sign in"}
+            {loading ? "登录中" : "登录"}
           </button>
         </form>
       </div>
       <div className="login-context">
-        <p className="eyebrow">Secure Workspace</p>
-        <h2>Manage agents, runtimes, protocols, and delivery queues.</h2>
+        <p className="eyebrow">安全工作区</p>
+        <h2>管理 Agent、运行时、协议与自动化任务队列。</h2>
         <div className="context-metrics">
           <span>Xray / Hysteria2</span>
-          <span>5 proxy protocols</span>
-          <span>Live link monitoring</span>
+          <span>5 类代理协议</span>
+          <span>实时链路监控</span>
         </div>
       </div>
     </section>
