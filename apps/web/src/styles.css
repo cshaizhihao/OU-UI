@@ -247,6 +247,10 @@ select:focus {
   padding: 0 10px;
   cursor: pointer;
   list-style: none;
+  transition:
+    background 360ms var(--spring),
+    color 360ms var(--spring),
+    transform 360ms var(--spring);
 }
 
 .professional-nav summary::-webkit-details-marker {
@@ -258,15 +262,18 @@ select:focus {
   content: "+";
   font-size: 16px;
   line-height: 1;
+  transition: transform 360ms var(--spring);
 }
 
 .professional-nav[open] summary::after {
   content: "-";
+  transform: rotate(180deg);
 }
 
 .professional-nav summary:hover {
   background: rgb(255 255 255 / 8%);
   color: #ffffff;
+  transform: translateX(2px);
 }
 
 .professional-nav summary small {
@@ -282,6 +289,7 @@ select:focus {
 }
 
 .nav-item {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 10px;
@@ -292,12 +300,38 @@ select:focus {
   font-size: 14px;
   font-weight: 700;
   text-decoration: none;
+  overflow: hidden;
+  transition:
+    background 360ms var(--spring),
+    color 360ms var(--spring),
+    transform 360ms var(--spring);
+}
+
+.nav-item::before {
+  position: absolute;
+  inset: 8px auto 8px 0;
+  width: 3px;
+  border-radius: 999px;
+  background: #38bdf8;
+  content: "";
+  opacity: 0;
+  transform: scaleY(0.2);
+  transition:
+    opacity 360ms var(--spring),
+    transform 360ms var(--spring);
 }
 
 .nav-item.active,
 .nav-item:hover {
   background: rgb(255 255 255 / 10%);
   color: #ffffff;
+  transform: translateX(2px);
+}
+
+.nav-item.active::before,
+.nav-item:hover::before {
+  opacity: 1;
+  transform: scaleY(1);
 }
 
 .nav-dot {
@@ -1037,6 +1071,7 @@ td span:not(.status):not(.task-state):not(.runtime-stage):not(.capability-chip):
 }
 
 .starter-step {
+  position: relative;
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
   gap: 12px;
@@ -1046,6 +1081,38 @@ td span:not(.status):not(.task-state):not(.runtime-stage):not(.capability-chip):
   padding: 16px;
   background: rgb(255 255 255 / 78%);
   box-shadow: 0 14px 36px rgb(15 23 42 / 8%);
+  overflow: hidden;
+  transform: translateZ(0);
+  transition:
+    border-color 440ms var(--spring),
+    box-shadow 440ms var(--spring),
+    transform 440ms var(--spring),
+    background 440ms var(--spring);
+}
+
+.starter-step::after {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(110deg, transparent 0%, rgb(255 255 255 / 48%) 46%, transparent 72%);
+  content: "";
+  opacity: 0;
+  pointer-events: none;
+  transform: translateX(-72%);
+  transition:
+    opacity 440ms var(--spring),
+    transform 660ms var(--spring);
+}
+
+.starter-step:hover {
+  border-color: rgb(37 99 235 / 34%);
+  background: rgb(255 255 255 / 90%);
+  box-shadow: 0 22px 54px rgb(15 23 42 / 12%);
+  transform: translateY(-4px);
+}
+
+.starter-step:hover::after {
+  opacity: 1;
+  transform: translateX(72%);
 }
 
 .starter-step-index {
@@ -1058,6 +1125,15 @@ td span:not(.status):not(.task-state):not(.runtime-stage):not(.capability-chip):
   background: #2563eb;
   font-size: 12px;
   font-weight: 900;
+  transition:
+    background 440ms var(--spring),
+    box-shadow 440ms var(--spring),
+    transform 440ms var(--spring);
+}
+
+.starter-step:hover .starter-step-index {
+  box-shadow: 0 10px 24px rgb(37 99 235 / 26%);
+  transform: scale(1.06);
 }
 
 .starter-step h3 {
@@ -1082,6 +1158,10 @@ td span:not(.status):not(.task-state):not(.runtime-stage):not(.capability-chip):
   background: #047857;
 }
 
+.starter-step-ok .starter-step-index {
+  animation: status-breathe 2.8s ease-in-out infinite;
+}
+
 .starter-step-warning .starter-step-index,
 .status-metric-warning {
   background: #b45309;
@@ -1090,6 +1170,17 @@ td span:not(.status):not(.task-state):not(.runtime-stage):not(.capability-chip):
 .starter-step-muted .starter-step-index,
 .status-metric-muted {
   background: #64748b;
+}
+
+@keyframes status-breathe {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgb(16 185 129 / 0%);
+  }
+
+  50% {
+    box-shadow: 0 0 0 7px rgb(16 185 129 / 14%);
+  }
 }
 
 .launchpad-grid {
@@ -3215,14 +3306,30 @@ td span {
   .refresh-rail::after,
   .skeleton-line,
   .skeleton-pill,
-  .skeleton-block {
+  .skeleton-block,
+  .starter-step-ok .starter-step-index {
     animation: none;
   }
 
   .kpi-card,
   .panel,
-  .agent-card {
+  .agent-card,
+  .nav-item,
+  .nav-item::before,
+  .professional-nav summary,
+  .professional-nav summary::after,
+  .starter-step,
+  .starter-step::after,
+  .starter-step-index {
     transition: none;
+  }
+
+  .nav-item,
+  .professional-nav summary,
+  .starter-step,
+  .starter-step:hover,
+  .starter-step:hover .starter-step-index {
+    transform: none;
   }
 }
 
