@@ -28,7 +28,7 @@ type AnalyticsPanelProps = {
 
 export function AnalyticsPanel({ agents, isLoading = false, sampleWindowLabel, selectedNodeId, traffic }: AnalyticsPanelProps) {
   const language = useLocale();
-  const isZh = language === "zh";
+  const isZh = language === "zh-CN";
   const chartRef = useRef<HTMLDivElement>(null);
   const series = useMemo(() => buildTrafficSeries(agents, traffic), [agents, traffic]);
   const latestNodeSamples = useMemo(() => latestSamplesByNode(traffic), [traffic]);

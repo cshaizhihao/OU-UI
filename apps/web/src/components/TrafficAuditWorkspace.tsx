@@ -13,7 +13,7 @@ const trafficHistoryLimit = 96;
 
 export function TrafficAuditWorkspace({ agents, data }: TrafficAuditWorkspaceProps) {
   const language = useLocale();
-  const isZh = language === "zh";
+  const isZh = language === "zh-CN";
   const formatTime = useFormatTime();
   const traffic = data?.control.traffic ?? [];
   const managedNodes = data?.control.nodes ?? [];

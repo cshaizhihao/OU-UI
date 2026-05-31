@@ -55,7 +55,7 @@ type AgentViewsProps = {
 
 export function ProbeAgentCards({ agents }: AgentViewsProps) {
   const language = useLocale();
-  const isZh = language === "zh";
+  const isZh = language === "zh-CN";
   return (
     <section className="panel probe-panel" id="agent-probes">
       <div className="section-heading compact">
@@ -300,61 +300,61 @@ function quotaPercent(used: number, quota: number): number {
   return Math.min(Math.max((used / quota) * 100, 0), 100);
 }
 
-function formatCpuDetail(agent: Agent, language: "zh" | "en"): string {
+function formatCpuDetail(agent: Agent, language: "zh-CN" | "en"): string {
   const percent = `${agent.cpu.toFixed(2)}%`;
   if (!agent.cpuCores) {
     return percent;
   }
-  return language === "zh" ? `${percent} / ${agent.cpuCores}核` : `${percent} / ${agent.cpuCores} cores`;
+  return language === "zh-CN" ? `${percent} / ${agent.cpuCores}核` : `${percent} / ${agent.cpuCores} cores`;
 }
 
-function formatDiskDetail(agent: Agent, language: "zh" | "en"): string {
+function formatDiskDetail(agent: Agent, language: "zh-CN" | "en"): string {
   if (!agent.diskTotalGb || agent.diskTotalGb <= 0) {
-    return language === "zh" ? "未上报" : "Not reported";
+    return language === "zh-CN" ? "未上报" : "Not reported";
   }
   const used = agent.diskUsedGb ?? 0;
   return `${used}G / ${agent.diskTotalGb}G`;
 }
 
-function formatLatency(agent: Agent, language: "zh" | "en"): { value: string; danger: boolean } {
+function formatLatency(agent: Agent, language: "zh-CN" | "en"): { value: string; danger: boolean } {
   if (typeof agent.latencyMs === "number" && Number.isFinite(agent.latencyMs)) {
     return { value: `${Math.round(agent.latencyMs)} ms`, danger: agent.latencyMs >= 180 };
   }
   if (agent.status === "offline") {
-    return { value: language === "zh" ? "不可达" : "Unreachable", danger: true };
+    return { value: language === "zh-CN" ? "不可达" : "Unreachable", danger: true };
   }
   return { value: "-- ms", danger: false };
 }
 
-function formatLoss(agent: Agent, language: "zh" | "en"): { value: string; danger: boolean } {
+function formatLoss(agent: Agent, language: "zh-CN" | "en"): { value: string; danger: boolean } {
   if (typeof agent.lossPercent === "number" && Number.isFinite(agent.lossPercent)) {
     return { value: `${agent.lossPercent.toFixed(1)}%`, danger: agent.lossPercent >= 2 };
   }
   if (agent.status === "offline") {
     return { value: "100%", danger: true };
   }
-  return { value: language === "zh" ? "未上报" : "N/A", danger: false };
+  return { value: language === "zh-CN" ? "未上报" : "N/A", danger: false };
 }
 
-function formatExpiry(value: number | null | undefined, language: "zh" | "en"): string {
+function formatExpiry(value: number | null | undefined, language: "zh-CN" | "en"): string {
   if (value === null) {
-    return language === "zh" ? "永久" : "Permanent";
+    return language === "zh-CN" ? "永久" : "Permanent";
   }
   if (typeof value === "number" && Number.isFinite(value)) {
-    return language === "zh" ? `${value}天` : `${value}d`;
+    return language === "zh-CN" ? `${value}天` : `${value}d`;
   }
-  return language === "zh" ? "永久" : "Permanent";
+  return language === "zh-CN" ? "永久" : "Permanent";
 }
 
-function formatUptime(agent: Agent, language: "zh" | "en"): string {
+function formatUptime(agent: Agent, language: "zh-CN" | "en"): string {
   if (agent.uptimeSeconds && agent.uptimeSeconds > 0) {
     const days = Math.floor(agent.uptimeSeconds / 86400);
     if (days > 0) {
-      return language === "zh" ? `${days}天` : `${days}d`;
+      return language === "zh-CN" ? `${days}天` : `${days}d`;
     }
     const hours = Math.floor(agent.uptimeSeconds / 3600);
     if (hours > 0) {
-      return language === "zh" ? `${hours}小时` : `${hours}h`;
+      return language === "zh-CN" ? `${hours}小时` : `${hours}h`;
     }
   }
   return formatProbeAge(agent.lastHeartbeatAt || agent.updatedAt, language);
@@ -370,7 +370,7 @@ function stripeClass(status: AgentStatus, index: number): string {
   return "";
 }
 
-function formatProbeAge(value: string, language: "zh" | "en"): string {
+function formatProbeAge(value: string, language: "zh-CN" | "en"): string {
   const relative = parseRelativeAge(value);
   if (relative !== undefined) {
     return relativeAgeLabel(relative, language);
@@ -406,16 +406,16 @@ function parseRelativeAge(value: string): number | undefined {
   }
 }
 
-function relativeAgeLabel(minutes: number, language: "zh" | "en"): string {
+function relativeAgeLabel(minutes: number, language: "zh-CN" | "en"): string {
   if (minutes < 60) {
-    return language === "zh" ? `${minutes} 分钟` : `${minutes} min`;
+    return language === "zh-CN" ? `${minutes} 分钟` : `${minutes} min`;
   }
   const hours = Math.round(minutes / 60);
   if (hours < 48) {
-    return language === "zh" ? `${hours} 小时` : `${hours} h`;
+    return language === "zh-CN" ? `${hours} 小时` : `${hours} h`;
   }
   const days = Math.round(hours / 24);
-  return language === "zh" ? `${days} 天` : `${days} d`;
+  return language === "zh-CN" ? `${days} 天` : `${days} d`;
 }
 
 export function AgentTable({ agents }: AgentViewsProps) {

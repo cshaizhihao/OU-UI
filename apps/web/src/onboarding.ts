@@ -28,7 +28,7 @@ export const starterStepDefinitions: readonly StarterStepDefinition[] = [
   {
     id: "connect-agent",
     copy: {
-      zh: {
+      "zh-CN": {
         label: "01",
         title: "接入服务器",
         description: "复制一条安装命令，在服务器上运行后 Agent 会自动回连面板。",
@@ -45,7 +45,7 @@ export const starterStepDefinitions: readonly StarterStepDefinition[] = [
   {
     id: "create-node",
     copy: {
-      zh: {
+      "zh-CN": {
         label: "02",
         title: "创建协议节点",
         description: "选择在线 Agent，生成一个可部署的 VLESS 节点并进入任务队列。",
@@ -62,7 +62,7 @@ export const starterStepDefinitions: readonly StarterStepDefinition[] = [
   {
     id: "copy-link",
     copy: {
-      zh: {
+      "zh-CN": {
         label: "03",
         title: "复制订阅或节点链接",
         description: "优先复制单节点链接，也可以继续复制 Clash、V2Ray 或 Sing-box 聚合订阅地址。",
@@ -79,7 +79,7 @@ export const starterStepDefinitions: readonly StarterStepDefinition[] = [
   {
     id: "verify-status",
     copy: {
-      zh: {
+      "zh-CN": {
         label: "04",
         title: "查看状态",
         description: "确认 Agent 在线、节点健康、任务队列没有失败项。",
@@ -107,17 +107,17 @@ export const professionalWorkspaceIds = [
 ] as const satisfies readonly WorkspaceId[];
 
 export const workspaceModeLabel = {
-  zh: "专业模式",
+  "zh-CN": "专业模式",
   en: "Professional mode"
 } as const satisfies Record<Locale, string>;
 
 export const starterModeLabel = {
-  zh: "默认启动台",
+  "zh-CN": "默认启动台",
   en: "Default launchpad"
 } as const satisfies Record<Locale, string>;
 
 export const launchpadCopy = {
-  zh: {
+  "zh-CN": {
     eyebrow: "默认启动台",
     title: "四步完成 OU-UI 首次开通",
     description: "先把服务器接进来，再创建节点、复制订阅、确认状态。高级路由、HA、RBAC、API Key 与 Copilot 已收进左侧专业模式。",

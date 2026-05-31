@@ -148,7 +148,7 @@ function UserAccessCard({ tenant, traffic, user }: { tenant?: Tenant; traffic: N
       <div className="tenant-card-head">
         <div>
           <strong>{user.username}</strong>
-          <span>{tenant?.name ?? (language === "zh" ? "主租户" : "Root tenant")}</span>
+          <span>{tenant?.name ?? (language === "zh-CN" ? "主租户" : "Root tenant")}</span>
         </div>
         <StatusTag tone={statusTone(user.status)}>{statusLabel(user.status, language)}</StatusTag>
       </div>
@@ -192,7 +192,7 @@ function MetricBox({ label, value }: { label: string; value: string }) {
 function ScopeChips({ access }: { access: string[] }) {
   const language = useLocale();
   const visible = normalizedAccess(access);
-  const scope = visible.length === 0 || visible.includes("*") ? [language === "zh" ? "全部节点" : "All nodes"] : visible.slice(0, 4);
+  const scope = visible.length === 0 || visible.includes("*") ? [language === "zh-CN" ? "全部节点" : "All nodes"] : visible.slice(0, 4);
   return (
     <div className="tenant-scope-chips">
       {scope.map((item) => (
@@ -297,7 +297,7 @@ function statusTone(status: string): "danger" | "info" | "muted" | "ok" | "warni
   return "muted";
 }
 
-function statusLabel(status: string, language: "zh" | "en"): string {
+function statusLabel(status: string, language: "zh-CN" | "en"): string {
   const normalized = status.toLowerCase();
   if (language === "en") {
     return normalized || "unknown";
@@ -314,29 +314,29 @@ function statusLabel(status: string, language: "zh" | "en"): string {
   return status || "未知";
 }
 
-function riskLabel(risk: TenantRisk, language: "zh" | "en"): string {
+function riskLabel(risk: TenantRisk, language: "zh-CN" | "en"): string {
   if (language === "en") {
     return { danger: "Limit reached", muted: "No quota", ok: "Healthy", warning: "Watch quota" }[risk];
   }
   return { danger: "已触顶", muted: "未限额", ok: "健康", warning: "接近配额" }[risk];
 }
 
-function formatScopedCount(count: number, suffix: string, language: "zh" | "en"): string {
+function formatScopedCount(count: number, suffix: string, language: "zh-CN" | "en"): string {
   if (language === "en") {
     return `${count} scoped`;
   }
   return `${count} ${suffix}`;
 }
 
-function formatQuotaPair(used: number, quota: number, language: "zh" | "en"): string {
+function formatQuotaPair(used: number, quota: number, language: "zh-CN" | "en"): string {
   return quota > 0 ? `${formatBytes(used)} / ${formatBytes(quota)}` : `${formatBytes(used)} / ${unlimitedLabel(language)}`;
 }
 
-function formatConnectionUsage(used: number, quota: number | undefined, language: "zh" | "en"): string {
+function formatConnectionUsage(used: number, quota: number | undefined, language: "zh-CN" | "en"): string {
   const label = quota && quota > 0 ? `${used} / ${quota}` : `${used} / ${unlimitedLabel(language)}`;
-  return language === "zh" ? `${label} 连接` : `${label} conn`;
+  return language === "zh-CN" ? `${label} 连接` : `${label} conn`;
 }
 
-function unlimitedLabel(language: "zh" | "en" = "zh"): string {
-  return language === "zh" ? "不限制" : "Unlimited";
+function unlimitedLabel(language: "zh-CN" | "en" = "zh-CN"): string {
+  return language === "zh-CN" ? "不限制" : "Unlimited";
 }

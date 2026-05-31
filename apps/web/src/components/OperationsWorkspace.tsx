@@ -321,12 +321,12 @@ function buildSubscriptionSummary(control: DashboardDTO["control"] | undefined) 
   };
 }
 
-function formatAvailableNodes(count: number, language: "zh" | "en"): string {
-  return language === "zh" ? `${count} 个可用节点` : `${count} available nodes`;
+function formatAvailableNodes(count: number, language: "zh-CN" | "en"): string {
+  return language === "zh-CN" ? `${count} 个可用节点` : `${count} available nodes`;
 }
 
-function formatSourceCount(count: number, language: "zh" | "en"): string {
-  return language === "zh" ? `${count} 个订阅源` : `${count} sources`;
+function formatSourceCount(count: number, language: "zh-CN" | "en"): string {
+  return language === "zh-CN" ? `${count} 个订阅源` : `${count} sources`;
 }
 
 function AlertList({ alerts }: { alerts: AlertEvent[] }) {

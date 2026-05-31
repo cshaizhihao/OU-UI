@@ -197,7 +197,7 @@ function ProfileList({ onCopy, profiles }: { onCopy: (path: string) => void; pro
           <div className="profile-card-stats">
             <span>Provider {profile.ruleProviders?.length ?? 0}</span>
             <span>Proxy Group {profile.proxyGroups?.length ?? 0}</span>
-            <span>{language === "zh" ? `规则 ${profile.routingRules?.length ?? 0}` : `Rules ${profile.routingRules?.length ?? 0}`}</span>
+            <span>{language === "zh-CN" ? `规则 ${profile.routingRules?.length ?? 0}` : `Rules ${profile.routingRules?.length ?? 0}`}</span>
             <span>{formatYamlLineCount(profile.generatedYaml, language)}</span>
           </div>
           {profile.generatedYaml ? (
@@ -214,10 +214,10 @@ function profilePath(id: string): string {
   return clashProfileURL(id);
 }
 
-function formatYamlLineCount(value: string | undefined, language: "zh" | "en"): string {
+function formatYamlLineCount(value: string | undefined, language: "zh-CN" | "en"): string {
   if (!value) {
-    return language === "zh" ? "YAML 未生成" : "YAML not generated";
+    return language === "zh-CN" ? "YAML 未生成" : "YAML not generated";
   }
   const lineCount = value.split("\n").length;
-  return language === "zh" ? `YAML ${lineCount} 行` : `YAML ${lineCount} lines`;
+  return language === "zh-CN" ? `YAML ${lineCount} 行` : `YAML ${lineCount} lines`;
 }

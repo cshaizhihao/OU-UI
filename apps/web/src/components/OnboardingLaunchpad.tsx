@@ -47,9 +47,9 @@ export function OnboardingLaunchpad({ agents, data, onRefresh }: OnboardingLaunc
   const subscriptionUrl = useMemo(() => aggregateSubscriptionURL(subscriptionFormat), [subscriptionFormat]);
   const sharePreview = selectedShareNode && nodeShare?.nodeId === selectedShareNode.id ? nodeShare.share : subscriptionUrl;
   const aggregateAction = starterStepDefinitions[2].copy[language].action;
-  const singleNodeAction = language === "zh" ? "复制节点链接" : "Copy node link";
-  const nodeLinkLabel = language === "zh" ? "节点链接" : "Node link";
-  const fallbackNotice = language === "zh" ? "节点链接暂不可用，已复制聚合订阅" : "Node link unavailable; copied aggregate subscription";
+  const singleNodeAction = language === "zh-CN" ? "复制节点链接" : "Copy node link";
+  const nodeLinkLabel = language === "zh-CN" ? "节点链接" : "Node link";
+  const fallbackNotice = language === "zh-CN" ? "节点链接暂不可用，已复制聚合订阅" : "Node link unavailable; copied aggregate subscription";
   const starterHealth = nodes.length > 0 && onlineAgents.length > 0 && failedTasks === 0;
   const stepTones = buildStepTones({
     failedTasks,
@@ -282,9 +282,9 @@ export function OnboardingLaunchpad({ agents, data, onRefresh }: OnboardingLaunc
           />
           <div className="status-grid" aria-label={copy.statusSummary}>
             <StatusMetric label="Agent" value={`${onlineAgents.length} / ${agents.length}`} tone={onlineAgents.length ? "ok" : "warning"} />
-            <StatusMetric label={language === "zh" ? "节点" : "Nodes"} value={String(nodes.length)} tone={nodes.length ? "ok" : "muted"} />
-            <StatusMetric label={language === "zh" ? "失败任务" : "Failed tasks"} value={String(failedTasks)} tone={failedTasks ? "warning" : "ok"} />
-            <StatusMetric label={language === "zh" ? "最近任务" : "Latest task"} value={latestTask?.status ?? "--"} tone={failedTasks ? "warning" : "muted"} />
+            <StatusMetric label={language === "zh-CN" ? "节点" : "Nodes"} value={String(nodes.length)} tone={nodes.length ? "ok" : "muted"} />
+            <StatusMetric label={language === "zh-CN" ? "失败任务" : "Failed tasks"} value={String(failedTasks)} tone={failedTasks ? "warning" : "ok"} />
+            <StatusMetric label={language === "zh-CN" ? "最近任务" : "Latest task"} value={latestTask?.status ?? "--"} tone={failedTasks ? "warning" : "muted"} />
           </div>
         </section>
       </div>

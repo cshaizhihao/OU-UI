@@ -34,4 +34,4 @@ type _PrimaryWorkspaceIsOverview = Expect<Equal<typeof primaryWorkspaceId, "over
 type _StarterFlowIsExactlyFourSteps = Expect<Equal<typeof starterStepIds, typeof expectedStarterFlow>>;
 type _StarterDefinitionsUseOnlyStarterIds = Expect<Equal<typeof starterStepDefinitions[number]["id"], typeof expectedStarterFlow[number]>>;
 type _ProfessionalWorkspacesAreHiddenGroup = Expect<Equal<typeof professionalWorkspaceIds, typeof expectedProfessionalWorkspaces>>;
-type _ModeLabelHasChineseDefault = Expect<Equal<typeof workspaceModeLabel.zh, "专业模式">>;
+type _ModeLabelHasChineseDefault = Expect<Equal<typeof workspaceModeLabel["zh-CN"], "专业模式">>;

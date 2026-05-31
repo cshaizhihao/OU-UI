@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, type ReactNode } from "react";
 import type { Locale } from "./Shell";
 
-const LocaleContext = createContext<Locale>("zh");
+const LocaleContext = createContext<Locale>("zh-CN");
 
 export function LocaleProvider({ children, language }: { children: ReactNode; language: Locale }) {
   useEffect(() => {
@@ -36,7 +36,7 @@ export function useT() {
 }
 
 export function translate(value: string, language: Locale): string {
-  if (language === "zh") {
+  if (language === "zh-CN") {
     return value;
   }
   return englishPhrases[value] ?? value;
@@ -577,7 +577,7 @@ export function formatBytes(value: number): string {
 }
 
 export function formatTime(value?: string): string {
-  return formatTimeForLocale(value, "zh");
+  return formatTimeForLocale(value, "zh-CN");
 }
 
 export function useFormatTime() {
@@ -587,7 +587,7 @@ export function useFormatTime() {
 
 function formatTimeForLocale(value: string | undefined, language: Locale): string {
   if (!value) {
-    return language === "zh" ? "从未" : "Never";
+    return language === "zh-CN" ? "从未" : "Never";
   }
   const time = new Date(value).getTime();
   if (!Number.isFinite(time)) {
@@ -595,14 +595,14 @@ function formatTimeForLocale(value: string | undefined, language: Locale): strin
   }
   const minutes = Math.max(0, Math.round((Date.now() - time) / 60000));
   if (minutes < 60) {
-    return language === "zh" ? `${minutes} 分钟前` : `${minutes} min ago`;
+    return language === "zh-CN" ? `${minutes} 分钟前` : `${minutes} min ago`;
   }
   const hours = Math.round(minutes / 60);
   if (hours < 48) {
-    return language === "zh" ? `${hours} 小时前` : `${hours} h ago`;
+    return language === "zh-CN" ? `${hours} 小时前` : `${hours} h ago`;
   }
   const days = Math.round(hours / 24);
-  return language === "zh" ? `${days} 天前` : `${days} d ago`;
+  return language === "zh-CN" ? `${days} 天前` : `${days} d ago`;
 }
 
 export function taskTone(status: string): "pending" | "running" | "success" | "failed" {

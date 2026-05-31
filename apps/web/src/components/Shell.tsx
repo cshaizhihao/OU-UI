@@ -7,7 +7,7 @@ import {
   workspaceModeLabel
 } from "../onboarding";
 
-export type Locale = "zh" | "en";
+export type Locale = "zh-CN" | "en";
 export type ThemeMode = "light" | "dark";
 export type WorkspaceId =
   | "overview"
@@ -37,7 +37,7 @@ export const workspaceItems: WorkspaceItem[] = [
   {
     id: "overview",
     copy: {
-      zh: {
+      "zh-CN": {
         label: "开始",
         eyebrow: "默认启动台",
         title: "四步开通 OU-UI",
@@ -54,7 +54,7 @@ export const workspaceItems: WorkspaceItem[] = [
   {
     id: "nodes",
     copy: {
-      zh: {
+      "zh-CN": {
         label: "节点管理",
         eyebrow: "Agent 与节点",
         title: "节点管理",
@@ -71,7 +71,7 @@ export const workspaceItems: WorkspaceItem[] = [
   {
     id: "traffic",
     copy: {
-      zh: {
+      "zh-CN": {
         label: "流量审计",
         eyebrow: "单节点采样",
         title: "流量审计",
@@ -88,7 +88,7 @@ export const workspaceItems: WorkspaceItem[] = [
   {
     id: "routing",
     copy: {
-      zh: {
+      "zh-CN": {
         label: "路由分流",
         eyebrow: "Routing",
         title: "高级路由与主机调优",
@@ -105,7 +105,7 @@ export const workspaceItems: WorkspaceItem[] = [
   {
     id: "ha",
     copy: {
-      zh: {
+      "zh-CN": {
         label: "高可用",
         eyebrow: "HA",
         title: "负载均衡与高可用",
@@ -122,7 +122,7 @@ export const workspaceItems: WorkspaceItem[] = [
   {
     id: "operations",
     copy: {
-      zh: {
+      "zh-CN": {
         label: "告警订阅",
         eyebrow: "自动化运维",
         title: "告警与外部订阅",
@@ -139,7 +139,7 @@ export const workspaceItems: WorkspaceItem[] = [
   {
     id: "clash",
     copy: {
-      zh: {
+      "zh-CN": {
         label: "Clash 托管",
         eyebrow: "Clash YAML",
         title: "Clash 规则托管",
@@ -156,7 +156,7 @@ export const workspaceItems: WorkspaceItem[] = [
   {
     id: "tenants",
     copy: {
-      zh: {
+      "zh-CN": {
         label: "多租户配置",
         eyebrow: "RBAC",
         title: "多租户与配额隔离",
@@ -173,7 +173,7 @@ export const workspaceItems: WorkspaceItem[] = [
   {
     id: "integrations",
     copy: {
-      zh: {
+      "zh-CN": {
         label: "API 与 Copilot",
         eyebrow: "开放集成",
         title: "REST API 与 AI 运维 Copilot",
@@ -227,7 +227,7 @@ export function Shell({
           <div className="brand-mark">OU</div>
           <div>
             <strong>OU-UI</strong>
-            <span>{language === "zh" ? "节点运维控制台" : "Node Ops Console"}</span>
+            <span>{language === "zh-CN" ? "节点运维控制台" : "Node Ops Console"}</span>
           </div>
         </div>
         <nav className="nav-list" aria-label="工作区切换">
@@ -243,7 +243,7 @@ export function Shell({
           <details className="nav-section professional-nav" open={professionalActive || undefined}>
             <summary>
               <span>{workspaceModeLabel[language]}</span>
-              <small>{language === "zh" ? "高级能力" : "Advanced"}</small>
+              <small>{language === "zh-CN" ? "高级能力" : "Advanced"}</small>
             </summary>
             <div className="nav-sublist">
               {professionalWorkspaces.map((item) => (
@@ -260,7 +260,7 @@ export function Shell({
         </nav>
         <div className="sidebar-footer">
           <span>v6.0.0</span>
-          <strong>{language === "zh" ? "控制面在线" : "Control plane online"}</strong>
+          <strong>{language === "zh-CN" ? "控制面在线" : "Control plane online"}</strong>
         </div>
       </aside>
       <main className="workspace">
@@ -273,11 +273,11 @@ export function Shell({
           <div className="topbar-actions">
             <div className="mode-switch" aria-label="语言与主题">
               <button
-                className={language === "zh" ? "selected" : ""}
-                onClick={() => onLanguageChange("zh")}
+                className={language === "zh-CN" ? "selected" : ""}
+                onClick={() => onLanguageChange("zh-CN")}
                 type="button"
               >
-                {language === "zh" ? "中" : "ZH"}
+                {language === "zh-CN" ? "中" : "ZH"}
               </button>
               <button
                 className={language === "en" ? "selected" : ""}
@@ -288,7 +288,7 @@ export function Shell({
               </button>
               <button
                 aria-label={
-                  language === "zh"
+                  language === "zh-CN"
                     ? theme === "dark"
                       ? "切换白天模式"
                       : "切换黑夜模式"
@@ -300,7 +300,7 @@ export function Shell({
                 onClick={() => onThemeChange(theme === "dark" ? "light" : "dark")}
                 type="button"
               >
-                {language === "zh" ? (theme === "dark" ? "日" : "夜") : theme === "dark" ? "Light" : "Dark"}
+                {language === "zh-CN" ? (theme === "dark" ? "日" : "夜") : theme === "dark" ? "Light" : "Dark"}
               </button>
             </div>
             {user ? (
@@ -310,14 +310,14 @@ export function Shell({
               </div>
             ) : null}
             <label className="search">
-              <span>{language === "zh" ? "搜索" : "Search"}</span>
-              <input placeholder={language === "zh" ? "Agent、节点、任务或租户" : "Agent, node, task, or tenant"} />
+              <span>{language === "zh-CN" ? "搜索" : "Search"}</span>
+              <input placeholder={language === "zh-CN" ? "Agent、节点、任务或租户" : "Agent, node, task, or tenant"} />
             </label>
-            <button className="icon-button" aria-label={language === "zh" ? "通知" : "Notifications"}>
+            <button className="icon-button" aria-label={language === "zh-CN" ? "通知" : "Notifications"}>
               !
             </button>
             <button className="ghost-button" onClick={onLogout} type="button">
-              {language === "zh" ? "退出" : "Sign out"}
+              {language === "zh-CN" ? "退出" : "Sign out"}
             </button>
           </div>
         </header>

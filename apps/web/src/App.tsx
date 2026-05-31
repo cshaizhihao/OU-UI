@@ -19,7 +19,7 @@ export function App() {
   const [loginLoading, setLoginLoading] = useState(false);
   const [error, setError] = useState("");
   const [activeWorkspace, setActiveWorkspace] = useState<WorkspaceId>("overview");
-  const [language, setLanguage] = useState<Locale>(() => (localStorage.getItem("ou-ui-language") === "en" ? "en" : "zh"));
+  const [language, setLanguage] = useState<Locale>(() => (localStorage.getItem("ou-ui-language") === "en" ? "en" : "zh-CN"));
   const [theme, setTheme] = useState<ThemeMode>(() => (localStorage.getItem("ou-ui-theme") === "light" ? "light" : "dark"));
 
   useEffect(() => {
@@ -31,8 +31,8 @@ export function App() {
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
-    document.documentElement.lang = language === "zh" ? "zh-Hans" : "en";
-    document.title = language === "zh" ? "OU-UI 控制台" : "OU-UI Console";
+    document.documentElement.lang = language === "zh-CN" ? "zh-CN" : "en";
+    document.title = language === "zh-CN" ? "OU-UI 控制台" : "OU-UI Console";
     localStorage.setItem("ou-ui-language", language);
     localStorage.setItem("ou-ui-theme", theme);
   }, [language, theme]);
