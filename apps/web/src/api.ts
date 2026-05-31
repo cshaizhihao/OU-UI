@@ -352,6 +352,13 @@ export async function optimizeAgent(agentId: string) {
   });
 }
 
+export async function loadNodeTrafficSamples(nodeId: string, limit = 96): Promise<NodeTraffic[]> {
+  const out = await request<ListResponse<NodeTraffic>>(
+    `/traffic/nodes/${encodeURIComponent(nodeId)}/samples?limit=${encodeURIComponent(String(limit))}`
+  );
+  return out.items;
+}
+
 export function panelBaseURL(): string {
   const base = apiBase().replace(/\/api\/v1$/, "");
   return new URL(base || "/", window.location.origin).toString().replace(/\/$/, "");

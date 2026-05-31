@@ -1687,9 +1687,63 @@ td span:not(.status):not(.task-state):not(.runtime-stage):not(.capability-chip):
   overflow: hidden;
 }
 
+.traffic-panel-top {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.traffic-panel-top h2 {
+  margin: 2px 0 6px;
+  color: #0f172a;
+  font-size: 22px;
+  line-height: 1.18;
+}
+
+.traffic-panel-top span {
+  display: block;
+  max-width: 620px;
+  color: #64748b;
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1.45;
+}
+
+.traffic-window-pill {
+  display: grid;
+  min-width: 142px;
+  border: 1px solid #dbeafe;
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: #eff6ff;
+  text-align: right;
+}
+
+.traffic-window-pill span,
+.traffic-window-pill strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.traffic-window-pill span {
+  color: #1d4ed8;
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.traffic-window-pill strong {
+  color: #0f172a;
+  font-size: 14px;
+  line-height: 1.25;
+}
+
 .traffic-wave-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 220px;
+  grid-template-columns: minmax(0, 1fr) 196px;
   gap: 16px;
 }
 
@@ -1977,10 +2031,21 @@ td span:not(.status):not(.task-state):not(.runtime-stage):not(.capability-chip):
 }
 
 .traffic-wave-card {
+  position: relative;
   min-height: 286px;
+  overflow: hidden;
   border: 1px solid rgb(203 213 225 / 62%);
   padding: 12px;
   box-shadow: inset 0 1px 0 rgb(255 255 255 / 80%);
+}
+
+.chart-loading-sheen {
+  position: absolute;
+  z-index: 1;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, rgb(255 255 255 / 62%), transparent);
+  animation: skeleton 1.2s ease-in-out infinite;
+  pointer-events: none;
 }
 
 .traffic-wave {
@@ -2009,10 +2074,13 @@ td span:not(.status):not(.task-state):not(.runtime-stage):not(.capability-chip):
 }
 
 .signal-stack strong {
+  overflow: hidden;
   margin-top: 6px;
   color: #0f172a;
   font-size: 24px;
   line-height: 1.05;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .bar-chart {
@@ -3051,6 +3119,7 @@ td span {
 
   .chart-grid,
   .traffic-wave-grid,
+  .node-audit-layout,
   .split-grid,
   .control-banner,
   .control-two,
@@ -3118,9 +3187,14 @@ td span {
   .topbar,
   .topbar-actions,
   .section-heading,
+  .traffic-panel-top,
   .notice-row {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .traffic-window-pill {
+    text-align: left;
   }
 
   .kpi-grid,

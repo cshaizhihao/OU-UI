@@ -519,7 +519,9 @@ export function MiniTable({
             style={{ gridTemplateColumns: `repeat(${columns.length}, minmax(0, 1fr))` }}
           >
             {row.map((cell, cellIndex) => (
-              <span key={`${cell}-${cellIndex}`}>{cell ? translate(cell, language) : "-"}</span>
+              <span key={`${cell}-${cellIndex}`} title={cell || undefined}>
+                {cell ? translate(cell, language) : "-"}
+              </span>
             ))}
           </div>
         ))
