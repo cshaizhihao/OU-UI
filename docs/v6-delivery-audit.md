@@ -9,7 +9,7 @@ This audit records the current evidence for the V6.0.0 delivery target. It is in
 - Repository: `cshaizhihao/OU-UI`
 - Branch: `main`
 - Latest verified commit: `b1a338b4dec1baf99c32ba89606a2703ae2cf544`
-- Local workspace: `D:\文档\OU-UI`
+- Local workspace: `D:\u6587\u6863\OU-UI`
 - Remote panel: `https://ou-ui-1879d0cb.zze.cc/ou-fe6a2bcd05/`
 - Remote health: `https://ou-ui-1879d0cb.zze.cc/healthz` returns `{"ok":true,"version":"v6.0.0"}`
 
@@ -17,7 +17,7 @@ This audit records the current evidence for the V6.0.0 delivery target. It is in
 
 | Requirement | Current evidence | Status |
 | --- | --- | --- |
-| Correct project path | Git root is `D:\文档\OU-UI`; `origin/main` is `https://github.com/cshaizhihao/OU-UI.git`. | Verified |
+| Correct project path | Git root is `D:\u6587\u6863\OU-UI`; `origin/main` is `https://github.com/cshaizhihao/OU-UI.git`. | Verified |
 | Default beginner flow | `apps/web/src/onboarding.ts` fixes exactly four steps: connect Agent, create node, copy link, verify status. `apps/web/src/onboarding.contract.ts` type-checks the contract. | Verified |
 | Advanced features hidden from default path | `professionalWorkspaceIds` groups nodes, traffic, routing, HA, operations, Clash, tenants, and integrations under the sidebar Professional mode. | Verified |
 | SaaS console shell | `apps/web/src/components/Shell.tsx` provides sidebar, topbar, language/theme controls, user/search/actions, and workspace routing. | Verified |
