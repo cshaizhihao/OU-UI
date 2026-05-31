@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-VERSION="v0.6.0"
+VERSION="v6.0.0"
 REPO_URL="https://github.com/cshaizhihao/OU-UI"
 DEFAULT_INSTALL_DIR="/opt/ou-ui"
 DEFAULT_PANEL_PORT="3000"
